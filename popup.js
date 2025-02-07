@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const importFile = document.getElementById('importFile');
   const lightThemeBtn = document.getElementById('lightTheme');
   const darkThemeBtn = document.getElementById('darkTheme');
+  const clearDataBtn = document.getElementById('clearDataBtn');
   
   let currentEditingId = null;
   
@@ -101,6 +102,18 @@ document.addEventListener('DOMContentLoaded', () => {
     .theme-btn:hover {
       background: var(--btn-hover-bg);
       border-color: var(--btn-hover-border);
+    }
+
+    .clear-btn {
+      margin-left: 8px;
+      color: #dc3545;
+      border-color: #dc3545;
+    }
+
+    .clear-btn:hover {
+      background: #dc3545;
+      border-color: #dc3545;
+      color: white;
     }
 
     .theme-btn.active {
@@ -754,4 +767,27 @@ document.addEventListener('DOMContentLoaded', () => {
   importBtn.addEventListener('click', () => {
     document.getElementById('importFile').click();
   });
+
+  // Функция очистки всех данных
+  function clearAllData() {
+    const confirmClear = confirm('Вы уверены, что хотите удалить все сохраненные данные? Это действие нельзя отменить.');
+    
+    if (confirmClear) {
+      chrome.storage.sync.clear(() => {
+        if (chrome.runtime.lastError) {
+          console.error('Error clearing data:', chrome.runtime.lastError);
+          alert('Произошла ошибка при очистке данных.');
+        } else {
+          // Сбрасываем тему на светлую
+          setTheme('light');
+          // Очищаем список избранного
+          renderFavorites([]);
+          alert('Все данные успешно удалены.');
+        }
+      });
+    }
+  }
+
+  // Добавляем обработчик для кнопки очистки
+  clearDataBtn.addEventListener('click', clearAllData);
 }); 
