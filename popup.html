@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>DeepSeek Favorites</title>
+</head>
+<body>
+  <div class="header">
+    <h1>Избранные чаты</h1>
+    <div class="header-buttons">
+      <button class="theme-btn" id="lightTheme" title="Светлая тема">🌞</button>
+      <button class="theme-btn" id="darkTheme" title="Темная тема">🌙</button>
+      <button class="theme-btn" id="exportBtn" title="Экспорт в .md файл">⬇️</button>
+      <button class="theme-btn" for="importFile" title="Импорт из .md файла">
+        ⬆️
+        <input type="file" id="importFile" accept=".md" style="display: none;">
+      </button>
+    </div>
+  </div>
+  
+  <!-- Форма редактирования -->
+  <div id="editForm" class="edit-form">
+    <div class="form-group">
+      <label for="editTitle">Название</label>
+      <input type="text" id="editTitle" placeholder="Введите название">
+    </div>
+    <div class="form-group">
+      <label for="editDescription">Описание</label>
+      <textarea id="editDescription" placeholder="Добавьте описание чата"></textarea>
+    </div>
+    <div class="button-group">
+      <button class="btn btn-secondary" id="cancelEdit">Отмена</button>
+      <button class="btn btn-primary" id="saveEdit">Сохранить</button>
+    </div>
+  </div>
+
+  <div id="favoritesList"></div>
+  <script src="popup.js"></script>
+</body>
+</html> 
