@@ -37,8 +37,6 @@ function getCleanMessageText(container) {
 
 // Функция для показа уведомления
 function showNotification(message, isWarning = false) {
-  console.log('Showing notification:', message);
-  
   // Проверяем, нет ли уже уведомления
   let notification = document.querySelector('.favorites-notification');
   if (notification) {
@@ -75,7 +73,7 @@ function showNotification(message, isWarning = false) {
   document.body.appendChild(notification);
   
   // Анимируем появление
-        setTimeout(() => {
+  setTimeout(() => {
     notification.style.opacity = '1';
     notification.style.transform = 'translateY(0)';
   }, 100);
@@ -95,19 +93,19 @@ async function addToFavorites(chatTitle, messageText = '') {
       title: chatTitle,
       url: window.location.href,
       timestamp: new Date().toISOString(),
-      description: messageText || '' // Используем текст сообщения как описание, если оно есть
+      description: messageText || ''
     };
     
     // Сохраняем и ждем результата
     await new Promise((resolve, reject) => {
-  chrome.storage.sync.get(['favorites'], (result) => {
+      chrome.storage.sync.get(['favorites'], (result) => {
         try {
-    const favorites = result.favorites || [];
+          const favorites = result.favorites || [];
           console.log('Current favorites:', favorites);
           
           // Проверяем, нет ли уже такого чата
           if (!favorites.some(f => f.url === favorite.url)) {
-    favorites.push(favorite);
+            favorites.push(favorite);
             chrome.storage.sync.set({ favorites }, () => {
               if (chrome.runtime.lastError) {
                 console.error('Error saving favorite:', chrome.runtime.lastError);
@@ -135,29 +133,54 @@ async function addToFavorites(chatTitle, messageText = '') {
   }
 }
 
-// Сообщаем background script, что content script загружен
-chrome.runtime.sendMessage({ action: "contentScriptReady" });
+// Функция для получения заголовка чата
+function getChatTitle() {
+  // Пробуем разные селекторы для поиска заголовка
+  const selectors = [
+    'div[class*="d8ed659a"]',
+    'div[class*="chat-title"]',
+    'div[class*="title"]',
+    'h1',
+    'div.title'
+  ];
+
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    if (element) {
+      const title = element.textContent.trim();
+      if (title) return title;
+    }
+  }
+
+  // Если не нашли заголовок, используем URL
+  return 'Chat ' + new Date().toLocaleString();
+}
 
 // Добавляем слушатель сообщений от background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Received message:', message);
+  console.log('Content script received message:', message);
   
   if (message.action === "addToFavorites") {
-    const titleElement = document.querySelector('div[class*="d8ed659a"]');
-    if (titleElement) {
-      const chatTitle = titleElement.textContent.trim();
-      addToFavorites(chatTitle, message.selectionText)
-        .then(() => {
-          sendResponse({ success: true });
-        })
-        .catch((error) => {
-          console.error('Error in addToFavorites:', error);
-          sendResponse({ success: false, error: error.message });
-        });
-      return true; // Will respond asynchronously
-    } else {
-      sendResponse({ success: false, error: "Title element not found" });
-    }
+    console.log('Adding to favorites...');
+    const chatTitle = getChatTitle();
+    console.log('Chat title:', chatTitle);
+    
+    addToFavorites(chatTitle, message.selectionText)
+      .then(() => {
+        console.log('Successfully added to favorites');
+        sendResponse({ success: true });
+      })
+      .catch((error) => {
+        console.error('Error adding to favorites:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    
+    return true; // Важно для асинхронного ответа
   }
-  return false;
+});
+
+// Сообщаем background script, что content script загружен
+console.log('Content script loaded, sending ready message...');
+chrome.runtime.sendMessage({ action: "contentScriptReady" }, (response) => {
+  console.log('Ready message sent, response:', response);
 }); 

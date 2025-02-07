@@ -1,8 +1,22 @@
+// Функция debounce для оптимизации производительности
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const favoritesList = document.getElementById('favoritesList');
   const editForm = document.getElementById('editForm');
   const editTitle = document.getElementById('editTitle');
   const editDescription = document.getElementById('editDescription');
+  const editTags = document.getElementById('editTags');
   const saveEditBtn = document.getElementById('saveEdit');
   const cancelEditBtn = document.getElementById('cancelEdit');
   const exportBtn = document.getElementById('exportBtn');
@@ -10,8 +24,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const lightThemeBtn = document.getElementById('lightTheme');
   const darkThemeBtn = document.getElementById('darkTheme');
   const clearDataBtn = document.getElementById('clearDataBtn');
+  const searchInput = document.getElementById('searchInput');
   
   let currentEditingId = null;
+  let currentFavorites = [];
   
   // Добавляем стили для всего popup
   const globalStyle = document.createElement('style');
@@ -126,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin: 0 0 16px 0;
+      margin: 0 0 12px 0;
       padding-bottom: 12px;
       border-bottom: 2px solid var(--border-color);
     }
@@ -256,12 +272,88 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     .edit-form {
-      display: none;
       padding: 12px;
       background: var(--btn-bg);
       border-radius: 8px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       border: 1px solid var(--btn-border);
+      animation: slideIn 0.3s ease;
+      box-shadow: 0 2px 8px var(--shadow-color);
+    }
+
+    .edit-form .form-group {
+      margin-bottom: 12px;
+    }
+
+    .edit-form .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .edit-form label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text-color);
+      font-size: 14px;
+    }
+
+    .edit-form input,
+    .edit-form textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      font-size: 14px;
+      background: var(--bg-color);
+      color: var(--text-color);
+      box-sizing: border-box;
+    }
+
+    .edit-form textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+
+    .edit-form input:focus,
+    .edit-form textarea:focus {
+      outline: none;
+      border-color: var(--btn-hover-border);
+      box-shadow: 0 0 0 2px var(--hover-shadow-color);
+    }
+
+    .edit-form .button-group {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 12px;
+    }
+
+    .edit-form .btn {
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .edit-form .btn-primary {
+      background: #0d6efd;
+      color: white;
+      border: none;
+    }
+
+    .edit-form .btn-primary:hover {
+      background: #0b5ed7;
+    }
+
+    .edit-form .btn-secondary {
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      border: 1px solid var(--btn-border);
+    }
+
+    .edit-form .btn-secondary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
     }
 
     .edit-form.active {
@@ -343,7 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
     @keyframes slideIn {
       from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(-10px);
       }
       to {
         opacity: 1;
@@ -358,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       to {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(-10px);
       }
     }
 
@@ -411,6 +503,34 @@ document.addEventListener('DOMContentLoaded', () => {
     .unpinned-container:empty {
       display: none;
     }
+
+    .search-container {
+      margin-bottom: 16px;
+      padding: 0;
+    }
+
+    #searchInput {
+      width: 100%;
+      padding: 8px 12px;
+      font-size: 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--btn-bg);
+      color: var(--text-color);
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    #searchInput:focus {
+      outline: none;
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+    }
+
+    #searchInput::placeholder {
+      color: var(--description-color);
+      opacity: 0.7;
+    }
   `;
   document.head.appendChild(globalStyle);
   
@@ -419,57 +539,282 @@ document.addEventListener('DOMContentLoaded', () => {
     favoritesList.innerHTML = '<div class="no-favorites">Нет сохраненных чатов</div>';
   }
   
+  // Функция для создания формы редактирования
+  function createEditForm(favorite) {
+    console.log('Creating edit form for favorite:', favorite);
+    const form = document.createElement('div');
+    form.className = 'edit-form';
+    form.innerHTML = `
+      <div class="form-group">
+        <label for="editTitle_${favorite.timestamp}">Название</label>
+        <input type="text" id="editTitle_${favorite.timestamp}" class="edit-title" placeholder="Введите название" value="${favorite.title || ''}">
+      </div>
+      <div class="form-group">
+        <label for="editTags_${favorite.timestamp}">Теги</label>
+        <input type="text" id="editTags_${favorite.timestamp}" class="edit-tags" placeholder="Добавьте теги через пробел" value="${(favorite.tags || []).join(' ')}">
+      </div>
+      <div class="form-group">
+        <label for="editDescription_${favorite.timestamp}">Описание</label>
+        <textarea id="editDescription_${favorite.timestamp}" class="edit-description" placeholder="Добавьте описание чата">${favorite.description || ''}</textarea>
+      </div>
+      <div class="button-group">
+        <button type="button" class="btn btn-secondary cancel-edit" data-action="cancel">Отмена</button>
+        <button type="button" class="btn btn-primary save-edit" data-action="save">Сохранить</button>
+      </div>
+    `;
+
+    // Находим кнопки и поля ввода
+    const saveButton = form.querySelector('[data-action="save"]');
+    const cancelButton = form.querySelector('[data-action="cancel"]');
+    const titleInput = form.querySelector('.edit-title');
+    const tagsInput = form.querySelector('.edit-tags');
+    const descriptionInput = form.querySelector('.edit-description');
+
+    if (!saveButton || !cancelButton || !titleInput || !tagsInput || !descriptionInput) {
+      console.error('Required form elements not found:', {
+        saveButton,
+        cancelButton,
+        titleInput,
+        tagsInput,
+        descriptionInput
+      });
+      return null;
+    }
+
+    // Функция сохранения
+    function handleSave() {
+      console.log('Save button clicked');
+      
+      if (!titleInput || !tagsInput || !descriptionInput) {
+        console.error('Form inputs not found');
+        return;
+      }
+
+      const newTitle = titleInput.value.trim();
+      const newTags = tagsInput.value.trim();
+      const newDescription = descriptionInput.value.trim();
+      
+      console.log('Saving with values:', {
+        title: newTitle,
+        tags: newTags,
+        description: newDescription,
+        timestamp: favorite.timestamp
+      });
+
+      // Преобразуем теги в массив
+      const tags = newTags
+        .split(/\s+/)
+        .filter(tag => tag.length > 0)
+        .map(tag => tag.toLowerCase());
+      
+      // Создаем новый массив избранного
+      const newFavorites = currentFavorites.map(f => {
+        if (f.timestamp === favorite.timestamp) {
+          return {
+            ...f,
+            title: newTitle,
+            description: newDescription,
+            tags: tags
+          };
+        }
+        return f;
+      });
+      
+      console.log('Saving new favorites:', newFavorites);
+      
+      // Сохраняем изменения
+      chrome.storage.sync.set({ favorites: newFavorites }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Error saving changes:', chrome.runtime.lastError);
+          alert('Произошла ошибка при сохранении изменений.');
+          return;
+        }
+        
+        console.log('Changes saved successfully');
+        currentFavorites = newFavorites;
+        hideEditForm();
+        filterFavorites(searchInput.value);
+      });
+    }
+
+    // Функция отмены
+    function handleCancel() {
+      console.log('Cancel button clicked');
+      hideEditForm();
+    }
+
+    // Добавляем обработчики событий
+    saveButton.addEventListener('click', handleSave);
+    cancelButton.addEventListener('click', handleCancel);
+
+    // Добавляем обработчик клавиш
+    form.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.ctrlKey) {
+        handleSave();
+      } else if (e.key === 'Escape') {
+        handleCancel();
+      }
+    });
+
+    return form;
+  }
+
   // Функция для отображения формы редактирования
-  function showEditForm(favorite) {
+  function showEditForm(chatElement, favorite) {
+    console.log('Showing edit form for:', { chatElement, favorite });
+    
+    if (!chatElement || !favorite) {
+      console.error('Invalid arguments for showEditForm:', { chatElement, favorite });
+      return;
+    }
+
+    // Закрываем другие открытые формы
+    const openForms = document.querySelectorAll('.edit-form');
+    openForms.forEach(form => form.remove());
+    
     currentEditingId = favorite.timestamp;
-    editTitle.value = favorite.title || '';
-    editDescription.value = favorite.description || '';
-    editForm.classList.add('active');
-    editTitle.focus();
+    const form = createEditForm(favorite);
+    
+    if (!form) {
+      console.error('Failed to create edit form');
+      return;
+    }
+
+    const chatItemElement = chatElement.querySelector('.chat-item');
+    if (!chatItemElement) {
+      console.error('Chat item element not found');
+      return;
+    }
+
+    // Вставляем форму перед элементом чата
+    chatItemElement.before(form);
+    
+    // Фокус на поле названия
+    const titleInput = form.querySelector('.edit-title');
+    if (titleInput) {
+      titleInput.focus();
+    } else {
+      console.error('Title input not found in form');
+    }
   }
   
   // Функция для скрытия формы редактирования
   function hideEditForm() {
+    const forms = document.querySelectorAll('.edit-form');
+    forms.forEach(form => {
+      form.style.animation = 'slideOut 0.3s ease forwards';
+      setTimeout(() => form.remove(), 300);
+    });
     currentEditingId = null;
-    editTitle.value = '';
-    editDescription.value = '';
-    editForm.classList.remove('active');
   }
   
-  // Обработчик сохранения изменений
-  saveEditBtn.addEventListener('click', () => {
-    if (!currentEditingId) return;
+  // Функция для фильтрации избранного
+  function filterFavorites(query) {
+    query = query.toLowerCase().trim();
     
-    chrome.storage.sync.get(['favorites'], (result) => {
-      const favorites = result.favorites || [];
-      const index = favorites.findIndex(f => f.timestamp === currentEditingId);
+    if (!query) {
+      renderFavorites(currentFavorites);
+      return;
+    }
+
+    const filtered = currentFavorites.filter(favorite => {
+      const titleMatch = (favorite.title || '').toLowerCase().includes(query);
+      const descriptionMatch = (favorite.description || '').toLowerCase().includes(query);
+      const tagMatch = favorite.tags && favorite.tags.some(tag => tag.includes(query));
       
-      if (index !== -1) {
-        favorites[index].title = editTitle.value.trim();
-        favorites[index].description = editDescription.value.trim();
-        
-        chrome.storage.sync.set({ favorites }, () => {
-          hideEditForm();
-          renderFavorites(favorites);
-        });
-      }
+      return titleMatch || descriptionMatch || tagMatch;
     });
+
+    renderFavorites(filtered);
+  }
+
+  // Добавляем обработчик поиска с debounce
+  searchInput.addEventListener('input', debounce((e) => {
+    filterFavorites(e.target.value);
+  }, 300));
+  
+  // Добавляем обработчик событий на весь список для делегирования
+  favoritesList.addEventListener('click', (e) => {
+    console.log('Click event on favoritesList, target:', e.target);
+    
+    // Находим ближайшую кнопку от места клика
+    const editBtn = e.target.closest('.edit-btn');
+    const pinBtn = e.target.closest('.pin-btn');
+    const deleteBtn = e.target.closest('.delete-btn');
+    
+    // Если клик не по кнопке - выходим
+    if (!editBtn && !pinBtn && !deleteBtn) return;
+    
+    // Предотвращаем всплытие события
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Находим элемент чата и его timestamp
+    const chatElement = (editBtn || pinBtn || deleteBtn).closest('.favorite-chat');
+    const timestamp = chatElement.getAttribute('data-timestamp');
+    const favorite = currentFavorites.find(f => f.timestamp === timestamp);
+    
+    if (!favorite) {
+      console.error('Favorite not found for timestamp:', timestamp);
+      return;
+    }
+    
+    console.log('Processing click for favorite:', favorite);
+    
+    // Обработка клика по кнопке редактирования
+    if (editBtn) {
+      console.log('Edit button clicked for favorite:', favorite);
+      showEditForm(chatElement, favorite);
+    }
+    
+    // Обработка клика по кнопке закрепления
+    if (pinBtn) {
+      console.log('Pin button clicked for favorite:', favorite);
+      const newPinned = !favorite.pinned;
+      const newFavorites = currentFavorites.map(f => {
+        if (f.timestamp === timestamp) {
+          return { 
+            ...f, 
+            pinned: newPinned,
+            pinnedOrder: newPinned ? currentFavorites.filter(x => x.pinned).length : undefined
+          };
+        }
+        return f;
+      });
+      
+      chrome.storage.sync.set({ favorites: newFavorites }, () => {
+        currentFavorites = newFavorites;
+        filterFavorites(searchInput.value);
+      });
+    }
+    
+    // Обработка клика по кнопке удаления
+    if (deleteBtn) {
+      console.log('Delete button clicked for favorite:', favorite);
+      if (confirm('Вы уверены, что хотите удалить этот чат из избранного?')) {
+        chatElement.style.animation = 'slideOut 0.3s ease forwards';
+        setTimeout(() => {
+          const newFavorites = currentFavorites.filter(f => f.timestamp !== timestamp);
+          chrome.storage.sync.set({ favorites: newFavorites }, () => {
+            currentFavorites = newFavorites;
+            filterFavorites(searchInput.value);
+          });
+        }, 300);
+      }
+    }
   });
-  
-  // Обработчик отмены редактирования
-  cancelEditBtn.addEventListener('click', hideEditForm);
-  
+
   // Функция для отображения списка избранного
   function renderFavorites(favorites) {
-    if (favorites.length === 0) {
+    if (!favorites || favorites.length === 0) {
       showNoFavorites();
       return;
     }
     
-    favoritesList.innerHTML = ''; // Очищаем список
+    favoritesList.innerHTML = '';
     
     // Сортируем: сначала закрепленные (по порядку), потом остальные (по времени)
-    favorites.sort((a, b) => {
+    const sortedFavorites = [...favorites].sort((a, b) => {
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
       if (a.pinned && b.pinned) {
@@ -478,12 +823,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
 
-    // Создаем контейнер для закрепленных чатов
+    // Создаем контейнеры
     const pinnedContainer = document.createElement('div');
     pinnedContainer.className = 'pinned-container';
     favoritesList.appendChild(pinnedContainer);
 
-    // Создаем контейнер для обычных чатов
     const unpinnedContainer = document.createElement('div');
     unpinnedContainer.className = 'unpinned-container';
     favoritesList.appendChild(unpinnedContainer);
@@ -493,24 +837,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const pinnedChats = Array.from(pinnedContainer.children);
       const newOrder = {};
       
-      // Создаем новый порядок на основе текущих позиций
       pinnedChats.forEach((chat, index) => {
         const timestamp = chat.getAttribute('data-timestamp');
         newOrder[timestamp] = index;
       });
 
-      // Обновляем избранное с новым порядком
-      const newFavorites = favorites.map(f => ({
+      const newFavorites = currentFavorites.map(f => ({
         ...f,
         pinnedOrder: f.pinned ? newOrder[f.timestamp] : undefined
       }));
 
       chrome.storage.sync.set({ favorites: newFavorites }, () => {
-        favorites = newFavorites;
+        currentFavorites = newFavorites;
       });
     }
     
-    favorites.forEach(favorite => {
+    sortedFavorites.forEach(favorite => {
       const chatElement = document.createElement('div');
       chatElement.className = 'favorite-chat';
       chatElement.setAttribute('data-timestamp', favorite.timestamp);
@@ -534,19 +876,20 @@ document.addEventListener('DOMContentLoaded', () => {
               ${favorite.pinned ? '📌 ' : ''}${favorite.title || 'Без названия'}
             </a>
             <div class="button-group">
-              <button class="pin-btn" title="${favorite.pinned ? 'Открепить' : 'Закрепить'}">
-                ${favorite.pinned ? '📌' : '📍'}
-              </button>
-              <button class="edit-btn" title="Редактировать">✎</button>
-              <button class="delete-btn" title="Удалить">×</button>
+              <button type="button" class="pin-btn" title="${favorite.pinned ? 'Открепить' : 'Закрепить'}">${favorite.pinned ? '📌' : '📍'}</button>
+              <button type="button" class="edit-btn" title="Редактировать">✎</button>
+              <button type="button" class="delete-btn" title="Удалить">×</button>
             </div>
           </div>
           <div class="chat-time">${chatTime}</div>
+          ${favorite.tags && favorite.tags.length > 0 ? 
+            `<div class="tags">${favorite.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
+            : ''}
           ${favorite.description ? `<div class="description">${favorite.description}</div>` : ''}
         </div>
       `;
-
-      // Упрощенные обработчики для drag and drop
+      
+      // Обработчики для drag and drop
       if (favorite.pinned) {
         chatElement.addEventListener('dragstart', (e) => {
           e.dataTransfer.setData('text/plain', favorite.timestamp);
@@ -576,47 +919,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
       
-      // Обработчик закрепления
-      chatElement.querySelector('.pin-btn').addEventListener('click', () => {
-        const newPinned = !favorite.pinned;
-        const newFavorites = favorites.map(f => {
-          if (f.timestamp === favorite.timestamp) {
-            return { 
-              ...f, 
-              pinned: newPinned,
-              pinnedOrder: newPinned ? favorites.filter(x => x.pinned).length : undefined
-            };
-          }
-          return f;
-        });
-        
-        chrome.storage.sync.set({ favorites: newFavorites }, () => {
-          favorites = newFavorites;
-          renderFavorites(favorites);
-        });
-      });
-      
-      // Обработчик редактирования
-      chatElement.querySelector('.edit-btn').addEventListener('click', () => {
-        showEditForm(favorite);
-      });
-      
-      // Обработчик удаления
-      chatElement.querySelector('.delete-btn').addEventListener('click', () => {
-        if (confirm('Вы уверены, что хотите удалить этот чат из избранного?')) {
-          chatElement.style.animation = 'slideOut 0.3s ease forwards';
-          setTimeout(() => {
-            const newFavorites = favorites.filter(f => f.timestamp !== favorite.timestamp);
-            chrome.storage.sync.set({ favorites: newFavorites }, () => {
-              chatElement.remove();
-              if (newFavorites.length === 0) {
-                showNoFavorites();
-              }
-            });
-          }, 300);
-        }
-      });
-      
       // Добавляем в соответствующий контейнер
       if (favorite.pinned) {
         pinnedContainer.appendChild(chatElement);
@@ -626,11 +928,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   
-  // Загружаем сохраненные избранные чаты
+  // Обновляем загрузку избранных чатов
   chrome.storage.sync.get(['favorites'], (result) => {
     console.log('Loaded favorites:', result.favorites);
-    const favorites = result.favorites || [];
-    renderFavorites(favorites);
+    currentFavorites = result.favorites || [];
+    renderFavorites(currentFavorites);
   });
 
   // Функция для экспорта в .json файл
@@ -714,32 +1016,42 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (importedFavorites.length === 0) return;
 
-        chrome.storage.sync.get(['favorites'], (result) => {
-          const currentFavorites = result.favorites || [];
-          
-          // Добавляем только те закладки, которых еще нет (проверка по URL)
-          const newFavorites = [
-            ...currentFavorites,
-            ...importedFavorites.filter(imported => 
-              !currentFavorites.some(current => current.url === imported.url)
-            )
-          ];
+        // Сохраняем текущую тему
+        const currentTheme = document.body.getAttribute('data-theme') || 'light';
 
-          chrome.storage.sync.set({ favorites: newFavorites }, () => {
-            renderFavorites(newFavorites);
-            alert(`Успешно импортировано ${
-              importedFavorites.filter(imported => 
-                !currentFavorites.some(current => current.url === imported.url)
-              ).length
-            } новых закладок`);
-          });
+        // Находим новые закладки (которых еще нет)
+        const newBookmarks = importedFavorites.filter(imported => 
+          !currentFavorites.some(current => current.url === imported.url)
+        );
+
+        // Объединяем текущие и новые закладки
+        const newFavorites = [...currentFavorites, ...newBookmarks];
+
+        // Сначала обновляем локальное состояние и UI
+        currentFavorites = newFavorites;
+        renderFavorites(newFavorites);
+
+        // Затем сохраняем в storage с сохранением темы
+        chrome.storage.sync.set({ 
+          favorites: newFavorites,
+          theme: currentTheme 
+        }, () => {
+          searchInput.value = '';
+          if (newBookmarks.length > 0) {
+            alert(`Успешно импортировано ${newBookmarks.length} новых закладок`);
+          } else {
+            alert('Все импортированные закладки уже существуют в списке');
+          }
         });
+
       } catch (error) {
         console.error('Error during import:', error);
         alert('Произошла ошибка при импорте. Проверьте консоль для деталей.');
       }
     };
     reader.readAsText(file);
+    // Очищаем input file, чтобы можно было импортировать тот же файл повторно
+    event.target.value = '';
   });
 
   // Функция для установки темы
@@ -768,7 +1080,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('importFile').click();
   });
 
-  // Функция очистки всех данных
+  // Обновляем функцию очистки
   function clearAllData() {
     const confirmClear = confirm('Вы уверены, что хотите удалить все сохраненные данные? Это действие нельзя отменить.');
     
@@ -778,9 +1090,9 @@ document.addEventListener('DOMContentLoaded', () => {
           console.error('Error clearing data:', chrome.runtime.lastError);
           alert('Произошла ошибка при очистке данных.');
         } else {
-          // Сбрасываем тему на светлую
           setTheme('light');
-          // Очищаем список избранного
+          currentFavorites = [];
+          searchInput.value = '';
           renderFavorites([]);
           alert('Все данные успешно удалены.');
         }

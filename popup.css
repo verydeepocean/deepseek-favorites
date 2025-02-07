@@ -1,0 +1,25 @@
+.tags {
+  margin: 5px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tag {
+  background-color: var(--tag-bg-color);
+  color: var(--tag-text-color);
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 12px;
+  display: inline-block;
+}
+
+[data-theme="light"] {
+  --tag-bg-color: #e8f0fe;
+  --tag-text-color: #1a73e8;
+}
+
+[data-theme="dark"] {
+  --tag-bg-color: #1a1a1a;
+  --tag-text-color: #8ab4f8;
+} 

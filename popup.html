@@ -6,7 +6,9 @@
 </head>
 <body>
   <div class="header">
-    <h1>Избранные чаты</h1>
+    <div class="header-left">
+      <h1>Избранные чаты</h1>
+    </div>
     <div class="header-buttons">
       <button class="theme-btn" id="lightTheme" title="Светлая тема">🌞</button>
       <button class="theme-btn" id="darkTheme" title="Темная тема">🌙</button>
@@ -19,20 +21,9 @@
     </div>
   </div>
   
-  <!-- Форма редактирования -->
-  <div id="editForm" class="edit-form">
-    <div class="form-group">
-      <label for="editTitle">Название</label>
-      <input type="text" id="editTitle" placeholder="Введите название">
-    </div>
-    <div class="form-group">
-      <label for="editDescription">Описание</label>
-      <textarea id="editDescription" placeholder="Добавьте описание чата"></textarea>
-    </div>
-    <div class="button-group">
-      <button class="btn btn-secondary" id="cancelEdit">Отмена</button>
-      <button class="btn btn-primary" id="saveEdit">Сохранить</button>
-    </div>
+  <!-- Поле поиска -->
+  <div class="search-container">
+    <input type="text" id="searchInput" placeholder="🔍 Поиск по названию и описанию...">
   </div>
 
   <div id="favoritesList"></div>
