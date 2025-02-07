@@ -620,71 +620,71 @@ document.addEventListener('DOMContentLoaded', () => {
     renderFavorites(favorites);
   });
 
-  // Функция для экспорта в .md файл
-  function exportToMarkdown(favorites) {
-    let markdown = '# DeepSeek Favorites\n\n';
+  // Функция для экспорта в .json файл
+  function exportToJson(favorites) {
+    const exportData = {
+      version: "1.0",
+      exportDate: new Date().toISOString(),
+      favorites: favorites.map(favorite => ({
+        title: favorite.title || 'Без названия',
+        url: favorite.url,
+        timestamp: favorite.timestamp,
+        description: favorite.description || '',
+        pinned: favorite.pinned || false,
+        pinnedOrder: favorite.pinnedOrder
+      }))
+    };
     
-    favorites.forEach(favorite => {
-      const date = new Date(favorite.timestamp).toLocaleString('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      
-      markdown += `## ${favorite.title || 'Без названия'}\n`;
-      markdown += `- Дата: ${date}\n`;
-      markdown += `- Ссылка: ${favorite.url}\n`;
-      if (favorite.description) {
-        markdown += `- Описание: ${favorite.description}\n`;
-      }
-      markdown += '\n';
-    });
-    
-    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `deepseek-favorites-${new Date().toISOString().split('T')[0]}.md`;
+    a.download = `deepseek-favorites-${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 
-  // Функция для импорта из .md файла
-  function importFromMarkdown(content) {
-    const favorites = [];
-    const sections = content.split('##').slice(1); // Пропускаем заголовок
-
-    sections.forEach(section => {
-      const lines = section.trim().split('\n');
-      const title = lines[0].trim();
-      const favorite = { title };
-
-      lines.slice(1).forEach(line => {
-        if (line.startsWith('- Ссылка:')) {
-          favorite.url = line.replace('- Ссылка:', '').trim();
-        } else if (line.startsWith('- Описание:')) {
-          favorite.description = line.replace('- Описание:', '').trim();
-        }
-      });
-
-      if (favorite.url) {
-        favorite.timestamp = new Date().toISOString();
-        favorites.push(favorite);
+  // Функция для импорта из .json файла
+  function importFromJson(content) {
+    try {
+      const importData = JSON.parse(content);
+      
+      // Проверяем структуру данных
+      if (!importData.favorites || !Array.isArray(importData.favorites)) {
+        throw new Error('Invalid file format: missing favorites array');
       }
-    });
-
-    return favorites;
+      
+      // Валидируем и нормализуем каждый элемент
+      const validatedFavorites = importData.favorites.map(favorite => {
+        if (!favorite.url) {
+          throw new Error('Invalid favorite: missing URL');
+        }
+        
+        return {
+          title: favorite.title || 'Без названия',
+          url: favorite.url,
+          timestamp: favorite.timestamp || new Date().toISOString(),
+          description: favorite.description || '',
+          pinned: Boolean(favorite.pinned),
+          pinnedOrder: favorite.pinnedOrder
+        };
+      });
+      
+      return validatedFavorites;
+    } catch (error) {
+      console.error('Error parsing import file:', error);
+      alert('Ошибка при импорте файла. Убедитесь, что файл имеет правильный формат JSON.');
+      return [];
+    }
   }
 
   // Обработчик экспорта
   exportBtn.addEventListener('click', () => {
     chrome.storage.sync.get(['favorites'], (result) => {
       const favorites = result.favorites || [];
-      exportToMarkdown(favorites);
+      exportToJson(favorites);
     });
   });
 
@@ -695,25 +695,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const content = e.target.result;
-      const importedFavorites = importFromMarkdown(content);
-
-      chrome.storage.sync.get(['favorites'], (result) => {
-        const currentFavorites = result.favorites || [];
+      try {
+        const content = e.target.result;
+        const importedFavorites = importFromJson(content);
         
-        // Добавляем только те закладки, которых еще нет (проверка по URL)
-        const newFavorites = [
-          ...currentFavorites,
-          ...importedFavorites.filter(imported => 
-            !currentFavorites.some(current => current.url === imported.url)
-          )
-        ];
+        if (importedFavorites.length === 0) return;
 
-        chrome.storage.sync.set({ favorites: newFavorites }, () => {
-          renderFavorites(newFavorites);
-          alert(`Импортировано ${importedFavorites.length} закладок`);
+        chrome.storage.sync.get(['favorites'], (result) => {
+          const currentFavorites = result.favorites || [];
+          
+          // Добавляем только те закладки, которых еще нет (проверка по URL)
+          const newFavorites = [
+            ...currentFavorites,
+            ...importedFavorites.filter(imported => 
+              !currentFavorites.some(current => current.url === imported.url)
+            )
+          ];
+
+          chrome.storage.sync.set({ favorites: newFavorites }, () => {
+            renderFavorites(newFavorites);
+            alert(`Успешно импортировано ${
+              importedFavorites.filter(imported => 
+                !currentFavorites.some(current => current.url === imported.url)
+              ).length
+            } новых закладок`);
+          });
         });
-      });
+      } catch (error) {
+        console.error('Error during import:', error);
+        alert('Произошла ошибка при импорте. Проверьте консоль для деталей.');
+      }
     };
     reader.readAsText(file);
   });
