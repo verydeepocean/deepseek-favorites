@@ -887,8 +887,8 @@ document.addEventListener('DOMContentLoaded', () => {
         minute: '2-digit'
       });
       
-      // Обрезаем описание до 200 символов
-      const truncatedDescription = favorite.description ? truncateText(favorite.description, 200) : '';
+      // Обрезаем описание до 120 символов
+      const truncatedDescription = favorite.description ? truncateText(favorite.description, 120) : '';
       
       chatElement.innerHTML = `
         <div class="chat-item ${favorite.pinned ? 'pinned' : ''}">
