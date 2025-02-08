@@ -25,9 +25,30 @@ document.addEventListener('DOMContentLoaded', () => {
   const darkThemeBtn = document.getElementById('darkTheme');
   const clearDataBtn = document.getElementById('clearDataBtn');
   const searchInput = document.getElementById('searchInput');
+  const langBtn = document.getElementById('langBtn');
   
   let currentEditingId = null;
   let currentFavorites = [];
+  
+  // Функция для установки языка
+  function setLanguage(lang) {
+    document.body.setAttribute('data-lang', lang);
+    langBtn.textContent = lang.toUpperCase();
+    chrome.storage.sync.set({ language: lang });
+  }
+
+  // Загружаем сохраненный язык
+  chrome.storage.sync.get(['language'], (result) => {
+    const savedLang = result.language || 'ru';
+    setLanguage(savedLang);
+  });
+
+  // Обработчик переключения языка
+  langBtn.addEventListener('click', () => {
+    const currentLang = document.body.getAttribute('data-lang') || 'ru';
+    const newLang = currentLang === 'ru' ? 'en' : 'ru';
+    setLanguage(newLang);
+  });
   
   // Добавляем стили для всего popup
   const globalStyle = document.createElement('style');
@@ -120,10 +141,28 @@ document.addEventListener('DOMContentLoaded', () => {
       border-color: var(--btn-hover-border);
     }
 
+    .header-buttons-delete {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-left: 16px;
+    }
+
+    .lang-btn {
+      font-size: 12px;
+      font-weight: bold;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+    }
+
     .clear-btn {
-      margin-left: 8px;
       color: #dc3545;
       border-color: #dc3545;
+      width: 28px;
+      height: 28px;
+      padding: 0;
     }
 
     .clear-btn:hover {
@@ -531,6 +570,247 @@ document.addEventListener('DOMContentLoaded', () => {
       color: var(--description-color);
       opacity: 0.7;
     }
+
+    /* Стили для модального окна промптов */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+    }
+
+    .modal-content {
+      position: relative;
+      background-color: var(--btn-bg);
+      margin: 15% auto;
+      padding: 0;
+      width: 80%;
+      max-width: 500px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px var(--shadow-color);
+      animation: slideDown 0.3s ease;
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-color);
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--btn-color);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .close-btn:hover {
+      color: var(--text-color);
+    }
+
+    .modal-body {
+      padding: 20px;
+    }
+
+    .prompts-list {
+      margin-bottom: 16px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .add-prompt-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--btn-bg);
+      border: 1px dashed var(--btn-border);
+      border-radius: 4px;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .add-prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    /* Стили для промптов */
+    .prompt-item {
+      padding: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      background: var(--btn-bg);
+      transition: all 0.2s ease;
+    }
+
+    .prompt-item[draggable="true"] {
+      cursor: move;
+    }
+
+    .prompt-item[draggable="true"]:hover {
+      transform: translateX(4px);
+    }
+
+    .prompt-item.dragging {
+      opacity: 0.5;
+      transform: scale(0.98);
+    }
+
+    .pinned-container {
+      margin-bottom: 16px;
+      min-height: 8px;
+    }
+
+    .pinned-container:empty {
+      padding: 8px;
+      border: 1px dashed var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .unpinned-container:empty {
+      display: none;
+    }
+
+    .prompt-title {
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--text-color);
+      font-size: 14px;
+    }
+
+    .prompt-text {
+      font-size: 13px;
+      color: var(--description-color);
+      white-space: pre-wrap;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .prompt-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .prompt-btn {
+      padding: 4px 8px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s ease;
+    }
+
+    .prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .add-prompt-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--btn-bg);
+      border: 1px dashed var(--btn-border);
+      border-radius: 4px;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+      margin-top: 16px;
+    }
+
+    .add-prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    #promptsList {
+      margin-top: 16px;
+    }
+
+    .prompt-tags {
+      margin: 8px 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .prompt-tags .tag {
+      font-size: 12px;
+      color: var(--btn-color);
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .prompt-tags .tag:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .prompt-item {
+      padding: 12px;
+    }
+
+    .popular-tags {
+      margin: 8px 0 16px 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .popular-tags-label {
+      font-size: 12px;
+      color: var(--description-color);
+    }
+
+    .popular-tags-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .popular-tag {
+      font-size: 12px;
+      color: var(--btn-color);
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .popular-tag:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+      transform: translateY(-1px);
+    }
   `;
   document.head.appendChild(globalStyle);
   
@@ -718,9 +998,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const filtered = currentFavorites.filter(favorite => {
+      // Если запрос начинается с #, ищем только по тегам
+      if (query.startsWith('#')) {
+        const searchTag = query.slice(1); // Убираем # из запроса
+        return favorite.tags && favorite.tags.some(tag => tag.toLowerCase() === searchTag);
+      }
+      
+      // Иначе ищем по всем полям
       const titleMatch = (favorite.title || '').toLowerCase().includes(query);
       const descriptionMatch = (favorite.description || '').toLowerCase().includes(query);
-      const tagMatch = favorite.tags && favorite.tags.some(tag => tag.includes(query));
+      const tagMatch = favorite.tags && favorite.tags.some(tag => 
+        tag.toLowerCase().includes(query) || 
+        ('#' + tag.toLowerCase()).includes(query)
+      );
       
       return titleMatch || descriptionMatch || tagMatch;
     });
@@ -813,6 +1103,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     favoritesList.innerHTML = '';
     
+    // Обновляем популярные теги для избранного
+    updatePopularTags(favorites, favoritesSection, searchInput);
+    
     // Сортируем: сначала закрепленные (по порядку), потом остальные (по времени)
     const sortedFavorites = [...favorites].sort((a, b) => {
       if (a.pinned && !b.pinned) return -1;
@@ -900,13 +1193,13 @@ document.addEventListener('DOMContentLoaded', () => {
               <button type="button" class="pin-btn" title="${favorite.pinned ? 'Открепить' : 'Закрепить'}">${favorite.pinned ? '📌' : '📍'}</button>
               <button type="button" class="edit-btn" title="Редактировать">✎</button>
               <button type="button" class="delete-btn" title="Удалить">×</button>
-            </div>
+        </div>
           </div>
           <div class="chat-time">${chatTime}</div>
-          ${favorite.tags && favorite.tags.length > 0 ? 
-            `<div class="tags">${favorite.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
-            : ''}
           ${truncatedDescription ? `<div class="description" title="${favorite.description}">${truncatedDescription}</div>` : ''}
+          ${favorite.tags && favorite.tags.length > 0 ? 
+            `<div class="prompt-tags">${favorite.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
+            : ''}
         </div>
       `;
       
@@ -957,17 +1250,28 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Функция для экспорта в .json файл
-  function exportToJson(favorites) {
+  function exportToJson(favorites, prompts) {
     const exportData = {
       version: "1.0",
       exportDate: new Date().toISOString(),
+      theme: document.body.getAttribute('data-theme') || 'light',
       favorites: favorites.map(favorite => ({
         title: favorite.title || 'Без названия',
         url: favorite.url,
         timestamp: favorite.timestamp,
         description: favorite.description || '',
         pinned: favorite.pinned || false,
-        pinnedOrder: favorite.pinnedOrder
+        pinnedOrder: favorite.pinnedOrder,
+        tags: favorite.tags || []
+      })),
+      prompts: prompts.map(prompt => ({
+        id: prompt.id,
+        title: prompt.title || 'Без названия',
+        text: prompt.text,
+        tags: prompt.tags || [],
+        createdAt: prompt.createdAt,
+        pinned: prompt.pinned || false,
+        pinnedOrder: prompt.pinnedOrder
       }))
     };
     
@@ -975,7 +1279,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `deepseek-favorites-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `deepseek-backup-${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -988,39 +1292,68 @@ document.addEventListener('DOMContentLoaded', () => {
       const importData = JSON.parse(content);
       
       // Проверяем структуру данных
-      if (!importData.favorites || !Array.isArray(importData.favorites)) {
-        throw new Error('Invalid file format: missing favorites array');
+      if (!importData.favorites && !importData.prompts) {
+        throw new Error('Invalid file format: missing favorites or prompts array');
       }
       
-      // Валидируем и нормализуем каждый элемент
-      const validatedFavorites = importData.favorites.map(favorite => {
-        if (!favorite.url) {
-          throw new Error('Invalid favorite: missing URL');
-        }
-        
-        return {
-          title: favorite.title || 'Без названия',
-          url: favorite.url,
-          timestamp: favorite.timestamp || new Date().toISOString(),
-          description: favorite.description || '',
-          pinned: Boolean(favorite.pinned),
-          pinnedOrder: favorite.pinnedOrder
-        };
-      });
+      // Валидируем и нормализуем избранное
+      let validatedFavorites = [];
+      if (importData.favorites && Array.isArray(importData.favorites)) {
+        validatedFavorites = importData.favorites.map(favorite => {
+          if (!favorite.url) {
+            throw new Error('Invalid favorite: missing URL');
+          }
+          
+          return {
+            title: favorite.title || 'Без названия',
+            url: favorite.url,
+            timestamp: favorite.timestamp || new Date().toISOString(),
+            description: favorite.description || '',
+            pinned: Boolean(favorite.pinned),
+            pinnedOrder: favorite.pinnedOrder,
+            tags: favorite.tags || []
+          };
+        });
+      }
+
+      // Валидируем и нормализуем промпты
+      let validatedPrompts = [];
+      if (importData.prompts && Array.isArray(importData.prompts)) {
+        validatedPrompts = importData.prompts.map(prompt => {
+          if (!prompt.text) {
+            throw new Error('Invalid prompt: missing text');
+          }
+          
+          return {
+            id: prompt.id || Date.now().toString(),
+            title: prompt.title || 'Без названия',
+            text: prompt.text,
+            tags: prompt.tags || [],
+            createdAt: prompt.createdAt || new Date().toISOString(),
+            pinned: Boolean(prompt.pinned),
+            pinnedOrder: prompt.pinnedOrder
+          };
+        });
+      }
       
-      return validatedFavorites;
+      return {
+        theme: importData.theme || 'light',
+        favorites: validatedFavorites,
+        prompts: validatedPrompts
+      };
     } catch (error) {
       console.error('Error parsing import file:', error);
       alert('Ошибка при импорте файла. Убедитесь, что файл имеет правильный формат JSON.');
-      return [];
+      return { theme: 'light', favorites: [], prompts: [] };
     }
   }
 
   // Обработчик экспорта
   exportBtn.addEventListener('click', () => {
-    chrome.storage.sync.get(['favorites'], (result) => {
+    chrome.storage.sync.get(['favorites', 'prompts'], (result) => {
       const favorites = result.favorites || [];
-      exportToJson(favorites);
+      const prompts = result.prompts || [];
+      exportToJson(favorites, prompts);
     });
   });
 
@@ -1033,36 +1366,59 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.onload = (e) => {
       try {
         const content = e.target.result;
-        const importedFavorites = importFromJson(content);
+        const imported = importFromJson(content);
         
-        if (importedFavorites.length === 0) return;
+        if (imported.favorites.length === 0 && imported.prompts.length === 0) return;
 
-        // Сохраняем текущую тему
-        const currentTheme = document.body.getAttribute('data-theme') || 'light';
+        // Получаем текущие данные
+        chrome.storage.sync.get(['favorites', 'prompts'], (result) => {
+          const currentFavorites = result.favorites || [];
+          const currentPrompts = result.prompts || [];
 
-        // Находим новые закладки (которых еще нет)
-        const newBookmarks = importedFavorites.filter(imported => 
-          !currentFavorites.some(current => current.url === imported.url)
-        );
+          // Находим новые закладки и промпты
+          const newFavorites = imported.favorites.filter(imported => 
+            !currentFavorites.some(current => current.url === imported.url)
+          );
+          const newPrompts = imported.prompts.filter(imported => 
+            !currentPrompts.some(current => current.id === imported.id)
+          );
 
-        // Объединяем текущие и новые закладки
-        const newFavorites = [...currentFavorites, ...newBookmarks];
+          // Объединяем текущие и новые данные
+          const updatedFavorites = [...currentFavorites, ...newFavorites];
+          const updatedPrompts = [...currentPrompts, ...newPrompts];
 
-        // Сначала обновляем локальное состояние и UI
-        currentFavorites = newFavorites;
-        renderFavorites(newFavorites);
+          // Сохраняем обновленные данные и тему
+          chrome.storage.sync.set({ 
+            favorites: updatedFavorites,
+            prompts: updatedPrompts,
+            theme: imported.theme 
+          }, () => {
+            searchInput.value = '';
+            promptSearchInput.value = '';
+            
+            // Обновляем тему
+            setTheme(imported.theme);
+            
+            // Обновляем отображение
+            renderFavorites(updatedFavorites);
+            renderPrompts(updatedPrompts);
 
-        // Затем сохраняем в storage с сохранением темы
-        chrome.storage.sync.set({ 
-          favorites: newFavorites,
-          theme: currentTheme 
-        }, () => {
-          searchInput.value = '';
-          if (newBookmarks.length > 0) {
-            alert(`Успешно импортировано ${newBookmarks.length} новых закладок`);
-          } else {
-            alert('Все импортированные закладки уже существуют в списке');
-          }
+            // Показываем сообщение об успешном импорте
+            let message = [];
+            if (newFavorites.length > 0) {
+              message.push(`${newFavorites.length} новых закладок`);
+            }
+            if (newPrompts.length > 0) {
+              message.push(`${newPrompts.length} новых промптов`);
+            }
+            
+            if (message.length > 0) {
+              alert(`Успешно импортировано: ${message.join(' и ')}`);
+            } else {
+              alert('Все импортированные элементы уже существуют в списке');
+            }
+          });
+
         });
 
       } catch (error) {
@@ -1111,10 +1467,26 @@ document.addEventListener('DOMContentLoaded', () => {
           console.error('Error clearing data:', chrome.runtime.lastError);
           alert('Произошла ошибка при очистке данных.');
         } else {
+          // Сбрасываем тему на светлую
           setTheme('light');
+          
+          // Очищаем все данные
           currentFavorites = [];
+          
+          // Очищаем поля поиска
           searchInput.value = '';
+          promptSearchInput.value = '';
+          
+          // Обновляем отображение
           renderFavorites([]);
+          renderPrompts([]);
+          
+          // Принудительно очищаем контейнеры с тегами
+          const favoritesTagsContainer = favoritesSection.querySelector('.popular-tags');
+          const promptsTagsContainer = promptsSection.querySelector('.popular-tags');
+          if (favoritesTagsContainer) favoritesTagsContainer.innerHTML = '';
+          if (promptsTagsContainer) promptsTagsContainer.innerHTML = '';
+          
           alert('Все данные успешно удалены.');
         }
       });
@@ -1123,4 +1495,341 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Добавляем обработчик для кнопки очистки
   clearDataBtn.addEventListener('click', clearAllData);
+
+  // Получаем элементы вкладок
+  const favoritesTab = document.getElementById('favoritesTab');
+  const promptsTab = document.getElementById('promptsTab');
+  const favoritesSection = document.getElementById('favoritesSection');
+  const promptsSection = document.getElementById('promptsSection');
+  const promptsList = document.getElementById('promptsList');
+  const addPromptBtn = document.getElementById('addPromptBtn');
+  const promptSearchInput = document.getElementById('promptSearchInput');
+
+  // Функция переключения вкладок
+  function switchTab(tab, section) {
+    // Убираем активный класс у всех вкладок и секций
+    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    
+    // Добавляем активный класс выбранной вкладке и секции
+    tab.classList.add('active');
+    section.classList.add('active');
+
+    // Если открыта вкладка промптов, загружаем их
+    if (section === promptsSection) {
+      loadPrompts();
+    }
+  }
+
+  // Обработчики переключения вкладок
+  favoritesTab.addEventListener('click', () => switchTab(favoritesTab, favoritesSection));
+  promptsTab.addEventListener('click', () => switchTab(promptsTab, promptsSection));
+
+  // Загрузка промптов
+  function loadPrompts() {
+    chrome.storage.sync.get(['prompts'], (result) => {
+      const prompts = result.prompts || [];
+      renderPrompts(prompts);
+    });
+  }
+
+  // Функция для обновления популярных тегов
+  function updatePopularTags(prompts, container, searchInput, maxTags = 8) {
+    // Создаем контейнер для популярных тегов, если его еще нет
+    let popularTagsContainer = container.querySelector('.popular-tags');
+    if (!popularTagsContainer) {
+      popularTagsContainer = document.createElement('div');
+      popularTagsContainer.className = 'popular-tags';
+      // Вставляем после поля поиска
+      searchInput.parentNode.after(popularTagsContainer);
+    }
+
+    // Собираем все теги и их частоту
+    const tagFrequency = {};
+    prompts.forEach(item => {
+      if (item.tags) {
+        item.tags.forEach(tag => {
+          tagFrequency[tag] = (tagFrequency[tag] || 0) + 1;
+        });
+      }
+    });
+
+    // Сортируем теги по частоте и берем топ-N
+    const popularTags = Object.entries(tagFrequency)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxTags)
+      .map(([tag]) => tag);
+
+    // Отображаем популярные теги
+    popularTagsContainer.innerHTML = popularTags.length > 0
+      ? `<div class="popular-tags-label">Популярные теги:</div>
+         <div class="popular-tags-list">
+           ${popularTags.map(tag => `<span class="tag popular-tag">#${tag}</span>`).join('')}
+         </div>`
+      : '';
+  }
+
+  // Обновляем функцию renderPrompts
+  function renderPrompts(prompts) {
+    promptsList.innerHTML = '';
+    
+    // Обновляем популярные теги
+    updatePopularTags(prompts, promptsSection, promptSearchInput);
+    
+    if (prompts.length === 0) {
+      promptsList.innerHTML = '<div class="no-prompts">Нет сохраненных промптов</div>';
+      return;
+    }
+
+    // Сортируем: сначала закрепленные, потом остальные
+    const sortedPrompts = [...prompts].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      if (a.pinned && b.pinned) {
+        return (a.pinnedOrder || 0) - (b.pinnedOrder || 0);
+      }
+      return 0;
+    });
+
+    // Создаем контейнеры для закрепленных и обычных промптов
+    const pinnedContainer = document.createElement('div');
+    pinnedContainer.className = 'pinned-container';
+    const unpinnedContainer = document.createElement('div');
+    unpinnedContainer.className = 'unpinned-container';
+    promptsList.appendChild(pinnedContainer);
+    promptsList.appendChild(unpinnedContainer);
+
+    // Функция обновления порядка закрепленных промптов
+    function updatePinnedOrder() {
+      const pinnedPrompts = Array.from(pinnedContainer.children);
+      const newOrder = {};
+      
+      pinnedPrompts.forEach((prompt, index) => {
+        const promptId = prompt.querySelector('.prompt-actions').dataset.id;
+        newOrder[promptId] = index;
+      });
+
+      chrome.storage.sync.get(['prompts'], (result) => {
+        const prompts = result.prompts || [];
+        const newPrompts = prompts.map(p => ({
+          ...p,
+          pinnedOrder: p.pinned ? newOrder[p.id] : undefined
+        }));
+
+        chrome.storage.sync.set({ prompts: newPrompts });
+      });
+    }
+
+    sortedPrompts.forEach(prompt => {
+      const promptElement = document.createElement('div');
+      promptElement.className = 'prompt-item';
+      if (prompt.pinned) {
+        promptElement.setAttribute('draggable', 'true');
+      }
+      
+      // Обрезаем текст промпта до 120 символов
+      const truncatedText = prompt.text.length > 120 ? 
+        prompt.text.substring(0, 120) + '...' : 
+        prompt.text;
+      
+      promptElement.innerHTML = `
+        <div class="prompt-title">${prompt.pinned ? '📌 ' : ''}${prompt.title}</div>
+        <div class="prompt-text" title="${prompt.text}">${truncatedText}</div>
+        ${prompt.tags && prompt.tags.length > 0 ? 
+          `<div class="prompt-tags">${prompt.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
+          : ''}
+        <div class="prompt-actions" data-id="${prompt.id}">
+          <button class="prompt-btn pin-prompt" title="${prompt.pinned ? 'Открепить' : 'Закрепить'}">${prompt.pinned ? '📌' : '📍'}</button>
+          <button class="prompt-btn edit-prompt">✎ Изменить</button>
+          <button class="prompt-btn delete-prompt">🗑️ Удалить</button>
+          <button class="prompt-btn copy-prompt">📋 Копировать</button>
+        </div>
+      `;
+
+      // Добавляем обработчики для drag and drop
+      if (prompt.pinned) {
+        promptElement.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData('text/plain', prompt.id);
+          promptElement.classList.add('dragging');
+          promptElement.style.opacity = '0.5';
+        });
+
+        promptElement.addEventListener('dragend', () => {
+          promptElement.classList.remove('dragging');
+          promptElement.style.opacity = '1';
+          updatePinnedOrder();
+        });
+
+        promptElement.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          const draggingElement = document.querySelector('.dragging');
+          if (!draggingElement || draggingElement === promptElement) return;
+
+          const rect = promptElement.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          
+          if (e.clientY < midY) {
+            pinnedContainer.insertBefore(draggingElement, promptElement);
+          } else {
+            pinnedContainer.insertBefore(draggingElement, promptElement.nextSibling);
+          }
+        });
+      }
+      
+      // Добавляем в соответствующий контейнер
+      if (prompt.pinned) {
+        pinnedContainer.appendChild(promptElement);
+      } else {
+        unpinnedContainer.appendChild(promptElement);
+      }
+    });
+  }
+
+  // Функция для фильтрации промптов
+  function filterPrompts(query) {
+    chrome.storage.sync.get(['prompts'], (result) => {
+      const prompts = result.prompts || [];
+      query = query.toLowerCase().trim();
+      
+      if (!query) {
+        renderPrompts(prompts);
+        return;
+      }
+
+      const filtered = prompts.filter(prompt => {
+        // Если запрос начинается с #, ищем только по тегам
+        if (query.startsWith('#')) {
+          const searchTag = query.slice(1); // Убираем # из запроса
+          return prompt.tags && prompt.tags.some(tag => tag.toLowerCase() === searchTag);
+        }
+        
+        // Иначе ищем по всем полям
+        const titleMatch = prompt.title.toLowerCase().includes(query);
+        const textMatch = prompt.text.toLowerCase().includes(query);
+        const tagMatch = prompt.tags && prompt.tags.some(tag => 
+          tag.toLowerCase().includes(query) || 
+          ('#' + tag.toLowerCase()).includes(query)
+        );
+        
+        return titleMatch || textMatch || tagMatch;
+      });
+
+      renderPrompts(filtered);
+    });
+  }
+
+  // Добавляем обработчик поиска для промптов с debounce
+  promptSearchInput.addEventListener('input', debounce((e) => {
+    filterPrompts(e.target.value);
+  }, 300));
+
+  // Обновляем обработчик для тегов
+  document.addEventListener('click', (e) => {
+    const tag = e.target.closest('.tag');
+    if (!tag) return;
+
+    const section = tag.closest('.section');
+    if (!section) return;
+
+    const tagText = tag.textContent.trim(); // Получаем текст тега
+    const searchQuery = tagText.startsWith('#') ? tagText : '#' + tagText; // Добавляем # если его нет
+    
+    if (section.id === 'promptsSection') {
+      promptSearchInput.value = searchQuery;
+      filterPrompts(searchQuery); // Сразу вызываем фильтрацию
+    } else if (section.id === 'favoritesSection') {
+      searchInput.value = searchQuery;
+      filterFavorites(searchQuery); // Сразу вызываем фильтрацию
+    }
+  });
+
+  // Добавляем обработчик кликов для кнопок промптов
+  promptsList.addEventListener('click', (e) => {
+    const button = e.target.closest('.prompt-btn');
+    if (!button) return;
+
+    const promptActions = button.closest('.prompt-actions');
+    const promptId = promptActions.dataset.id;
+    const promptElement = button.closest('.prompt-item');
+
+    chrome.storage.sync.get(['prompts'], (result) => {
+      const prompts = result.prompts || [];
+      const prompt = prompts.find(p => p.id === promptId);
+      
+      if (!prompt) {
+        console.error('Prompt not found:', promptId);
+        return;
+      }
+
+      // Обработка клика по кнопке закрепления
+      if (button.classList.contains('pin-prompt')) {
+        const newPinned = !prompt.pinned;
+        const newPrompts = prompts.map(p => {
+          if (p.id === promptId) {
+            return {
+              ...p,
+              pinned: newPinned,
+              pinnedOrder: newPinned ? prompts.filter(x => x.pinned).length : undefined
+            };
+          }
+          return p;
+        });
+
+        chrome.storage.sync.set({ prompts: newPrompts }, () => {
+          renderPrompts(newPrompts);
+        });
+      }
+      
+      // Обработка клика по кнопке редактирования
+      else if (button.classList.contains('edit-prompt')) {
+        chrome.windows.create({
+          url: 'prompt-editor.html?id=' + promptId,
+          type: 'popup',
+          width: 600,
+          height: 500
+        });
+      }
+      
+      // Обработка клика по кнопке удаления
+      else if (button.classList.contains('delete-prompt')) {
+        if (confirm('Вы уверены, что хотите удалить этот промпт?')) {
+          const newPrompts = prompts.filter(p => p.id !== promptId);
+          chrome.storage.sync.set({ prompts: newPrompts }, () => {
+            renderPrompts(newPrompts);
+          });
+        }
+      }
+      
+      // Обработка клика по кнопке копирования
+      else if (button.classList.contains('copy-prompt')) {
+        navigator.clipboard.writeText(prompt.text).then(() => {
+          const originalText = button.textContent;
+          button.textContent = '✓ Скопировано';
+          setTimeout(() => {
+            button.textContent = originalText;
+          }, 2000);
+        });
+      }
+    });
+  });
+
+  // Обработчик для кнопки добавления промпта
+  addPromptBtn.addEventListener('click', () => {
+    chrome.windows.create({
+      url: 'prompt-editor.html',
+      type: 'popup',
+      width: 600,
+      height: 500
+    });
+  });
+
+  // Слушатель изменений в хранилище
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'sync' && changes.prompts) {
+      // Обновляем список промптов только если открыта вкладка промптов
+      if (promptsSection.classList.contains('active')) {
+        renderPrompts(changes.prompts.newValue || []);
+      }
+    }
+  });
 }); 
