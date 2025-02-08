@@ -852,6 +852,24 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
     
+    // Функция для обрезки текста по целому слову
+    function truncateText(text, maxLength) {
+      if (!text || text.length <= maxLength) return text;
+      
+      // Обрезаем до максимальной длины
+      let truncated = text.substr(0, maxLength);
+      
+      // Находим последний пробел перед обрезкой
+      const lastSpace = truncated.lastIndexOf(' ');
+      
+      // Обрезаем по последнему целому слову
+      if (lastSpace > -1) {
+        truncated = truncated.substr(0, lastSpace);
+      }
+      
+      return truncated + '...';
+    }
+    
     sortedFavorites.forEach(favorite => {
       const chatElement = document.createElement('div');
       chatElement.className = 'favorite-chat';
@@ -869,6 +887,9 @@ document.addEventListener('DOMContentLoaded', () => {
         minute: '2-digit'
       });
       
+      // Обрезаем описание до 200 символов
+      const truncatedDescription = favorite.description ? truncateText(favorite.description, 200) : '';
+      
       chatElement.innerHTML = `
         <div class="chat-item ${favorite.pinned ? 'pinned' : ''}">
           <div class="chat-header">
@@ -885,7 +906,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ${favorite.tags && favorite.tags.length > 0 ? 
             `<div class="tags">${favorite.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
             : ''}
-          ${favorite.description ? `<div class="description">${favorite.description}</div>` : ''}
+          ${truncatedDescription ? `<div class="description" title="${favorite.description}">${truncatedDescription}</div>` : ''}
         </div>
       `;
       
