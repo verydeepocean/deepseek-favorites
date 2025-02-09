@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Редактор промптов</title>
+  <title>Prompt Editor</title>
   <style>
     :root {
       --bg-color: #f8f9fa;
@@ -177,33 +177,33 @@
 <body>
   <div class="header">
     <div class="header-left">
-      <button id="backBtn" class="back-btn" title="Назад">←</button>
-      <h1 class="header-title">Редактор промптов</h1>
+      <button id="backBtn" class="back-btn" title="Back">←</button>
+      <h1 class="header-title">Prompt Editor</h1>
     </div>
     <div class="theme-buttons">
-      <button class="theme-btn" id="lightTheme" title="Светлая тема">🌞</button>
-      <button class="theme-btn" id="darkTheme" title="Темная тема">🌙</button>
+      <button class="theme-btn" id="lightTheme" title="Light Theme">🌞</button>
+      <button class="theme-btn" id="darkTheme" title="Dark Theme">🌙</button>
     </div>
   </div>
 
   <div class="form-group">
-    <label for="promptTitle">Название</label>
-    <input type="text" id="promptTitle" placeholder="Введите название промпта">
+    <label for="promptTitle">Title</label>
+    <input type="text" id="promptTitle" placeholder="Enter prompt title">
   </div>
 
   <div class="form-group">
-    <label for="promptText">Текст промпта</label>
-    <textarea id="promptText" placeholder="Введите текст промпта"></textarea>
+    <label for="promptText">Prompt Text</label>
+    <textarea id="promptText" placeholder="Enter prompt text"></textarea>
   </div>
 
   <div class="form-group">
-    <label for="promptTags">Теги (через пробел)</label>
-    <input type="text" id="promptTags" placeholder="Добавьте теги">
+    <label for="promptTags">Tags (space separated)</label>
+    <input type="text" id="promptTags" placeholder="Add tags">
   </div>
 
   <div class="button-group">
-    <button id="cancelBtn" class="btn btn-secondary">Отмена</button>
-    <button id="saveBtn" class="btn btn-primary">Сохранить</button>
+    <button id="cancelBtn" class="btn btn-secondary">Cancel</button>
+    <button id="saveBtn" class="btn btn-primary">Save</button>
   </div>
 
   <script src="prompt-editor.js"></script>

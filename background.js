@@ -1,8 +1,8 @@
 // Создаем пункт контекстного меню при установке расширения
 chrome.runtime.onInstalled.addListener(() => {
-  // Сначала удалим существующее меню, если оно есть
+  // First remove existing menu if it exists
   chrome.contextMenus.removeAll(() => {
-    // Затем создаем новое
+    // Then create new one
     chrome.contextMenus.create({
       id: "addToFavorites",
       title: "Add to Favorites ⭐",

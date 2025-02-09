@@ -153,7 +153,7 @@ function getChatTitle() {
   }
 
   // Если не нашли заголовок, используем URL
-  return 'Chat ' + new Date().toLocaleString();
+  return 'Chat ' + new Date().toLocaleString('en-US');
 }
 
 // Добавляем слушатель сообщений от background script

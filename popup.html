@@ -9,47 +9,46 @@
   <div class="header">
     <div class="header-left">
       <div class="tabs">
-        <button class="tab-btn active" id="favoritesTab">Избранные чаты</button>
-        <button class="tab-btn" id="promptsTab">Промпты</button>
+        <button class="tab-btn active" id="favoritesTab">FAVORITE CHATS</button>
+        <button class="tab-btn" id="promptsTab">PROMPTS</button>
       </div>
     </div>
     <div class="header-buttons">
       <div class="header-buttons-container">
         <div class="header-buttons-row">
-          <button class="theme-btn" id="lightTheme" title="Светлая тема">🌞</button>
-          <button class="theme-btn" id="darkTheme" title="Темная тема">🌙</button>
+          <button class="theme-btn" id="lightTheme" title="Light Theme">🌞</button>
+          <button class="theme-btn" id="darkTheme" title="Dark Theme">🌙</button>
         </div>
         <div class="header-buttons-row">
-          <button class="theme-btn" id="exportBtn" title="Экспорт в .json файл">⬆️</button>
-          <button class="theme-btn" for="importFile" title="Импорт из .json файла">⬇️
+          <button class="theme-btn" id="exportBtn" title="Export to .json file">⬆️</button>
+          <button class="theme-btn" for="importFile" title="Import from .json file">⬇️
             <input type="file" id="importFile" accept=".json" style="display: none;">
           </button>
         </div>
       </div>
       <div class="header-buttons-delete">
-        <button class="theme-btn lang-btn" id="langBtn" title="Сменить язык">RU</button>
-        <button class="theme-btn clear-btn" id="clearDataBtn" title="Очистить все данные">🗑️</button>
+        <button class="theme-btn clear-btn" id="clearDataBtn" title="Clear all data">🗑️</button>
       </div>
     </div>
   </div>
   
-  <!-- Контейнер для вкладки Избранное -->
+  <!-- Favorites Tab Container -->
   <div id="favoritesSection" class="section active">
     <div class="search-container">
-      <input type="text" id="searchInput" placeholder="🔍 Поиск по названию и описанию...">
+      <input type="text" id="searchInput" placeholder="🔍 Search by title and description...">
     </div>
     <div id="favoritesList"></div>
   </div>
 
-  <!-- Контейнер для вкладки Промпты -->
+  <!-- Prompts Tab Container -->
   <div id="promptsSection" class="section">
     <div class="search-container">
-      <input type="text" id="promptSearchInput" placeholder="🔍 Поиск по промптам...">
+      <input type="text" id="promptSearchInput" placeholder="🔍 Search prompts...">
     </div>
     <div id="promptsList">
-      <!-- Здесь будут промпты -->
+      <!-- Prompts will be here -->
     </div>
-    <button class="add-prompt-btn" id="addPromptBtn">+ Добавить промпт</button>
+    <button class="add-prompt-btn" id="addPromptBtn">+ Add Prompt</button>
   </div>
 
   <script src="popup.js"></script>

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "DeepSeek Favorites",
   "version": "1.0",
-  "description": "Управление избранными чатами и промптами в DeepSeek",
+  "description": "Manage favorite chats and prompts in DeepSeek",
   "permissions": [
     "storage",
     "contextMenus",
@@ -15,15 +15,15 @@
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
+      "16": "icons/deepseek.png",
+      "48": "icons/deepseek.png",
+      "128": "icons/deepseek.png"
     }
   },
   "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "16": "icons/deepseek.png",
+    "48": "icons/deepseek.png",
+    "128": "icons/deepseek.png"
   },
   "content_scripts": [
     {
@@ -41,4 +41,4 @@
       "matches": ["<all_urls>"]
     }
   ]
-} 
+}

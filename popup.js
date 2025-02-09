@@ -25,63 +25,107 @@ document.addEventListener('DOMContentLoaded', () => {
   const darkThemeBtn = document.getElementById('darkTheme');
   const clearDataBtn = document.getElementById('clearDataBtn');
   const searchInput = document.getElementById('searchInput');
-  const langBtn = document.getElementById('langBtn');
+  const favoritesTab = document.getElementById('favoritesTab');
+  const promptsTab = document.getElementById('promptsTab');
+  const favoritesSection = document.getElementById('favoritesSection');
+  const promptsSection = document.getElementById('promptsSection');
+  const promptSearchInput = document.getElementById('promptSearchInput');
+  const addPromptBtn = document.getElementById('addPromptBtn');
   
   let currentEditingId = null;
   let currentFavorites = [];
+  let currentPrompts = [];
   
-  // Функция для установки языка
-  function setLanguage(lang) {
-    document.body.setAttribute('data-lang', lang);
-    langBtn.textContent = lang.toUpperCase();
-    chrome.storage.sync.set({ language: lang });
+  // Функция для установки темы
+  function setTheme(theme) {
+    document.body.setAttribute('data-theme', theme);
+    chrome.storage.sync.set({ theme });
+    
+    if (theme === 'light') {
+      lightThemeBtn.classList.add('active');
+      darkThemeBtn.classList.remove('active');
+    } else {
+      darkThemeBtn.classList.add('active');
+      lightThemeBtn.classList.remove('active');
+    }
   }
 
-  // Загружаем сохраненный язык
-  chrome.storage.sync.get(['language'], (result) => {
-    const savedLang = result.language || 'ru';
-    setLanguage(savedLang);
+  // Загружаем сохраненную тему
+  chrome.storage.sync.get(['theme'], (result) => {
+    const savedTheme = result.theme || 'light';
+    setTheme(savedTheme);
   });
 
-  // Обработчик переключения языка
-  langBtn.addEventListener('click', () => {
-    const currentLang = document.body.getAttribute('data-lang') || 'ru';
-    const newLang = currentLang === 'ru' ? 'en' : 'ru';
-    setLanguage(newLang);
-  });
+  // Обработчики переключения темы
+  lightThemeBtn.addEventListener('click', () => setTheme('light'));
+  darkThemeBtn.addEventListener('click', () => setTheme('dark'));
   
   // Добавляем стили для всего popup
   const globalStyle = document.createElement('style');
   globalStyle.textContent = `
     :root {
-      --bg-color: #f8f9fa;
-      --text-color: #1a1a1a;
+      --bg-color: #ffffff;
+      --text-color: #2c3e50;
       --border-color: #e9ecef;
-      --btn-bg: white;
+      --btn-bg: #f8f9fa;
       --btn-color: #495057;
       --btn-border: #dee2e6;
-      --btn-hover-bg: #f8f9fa;
+      --btn-hover-bg: #e9ecef;
       --btn-hover-border: #ced4da;
       --description-color: #6c757d;
       --time-color: #868e96;
       --shadow-color: rgba(0,0,0,0.05);
       --hover-shadow-color: rgba(0,0,0,0.1);
       --icon-size: 15px;
+      --scrollbar-track: #f0f0f0;
+      --scrollbar-thumb: #e0e0e0;
+      --scrollbar-thumb-hover: #d0d0d0;
     }
 
     [data-theme="dark"] {
-      --bg-color: #212529;
-      --text-color: #f8f9fa;
-      --border-color: #343a40;
-      --btn-bg: #343a40;
+      --bg-color: #1a1d21;
+      --text-color: #e9ecef;
+      --border-color: #2d3339;
+      --btn-bg: #2a2d31;
       --btn-color: #e9ecef;
-      --btn-border: #495057;
-      --btn-hover-bg: #495057;
-      --btn-hover-border: #6c757d;
+      --btn-border: #3a3f44;
+      --btn-hover-bg: #34383d;
+      --btn-hover-border: #454b51;
       --description-color: #adb5bd;
       --time-color: #868e96;
-      --shadow-color: rgba(0,0,0,0.2);
-      --hover-shadow-color: rgba(0,0,0,0.3);
+      --shadow-color: rgba(0,0,0,0.3);
+      --hover-shadow-color: rgba(0,0,0,0.4);
+      --scrollbar-track: #1a1d21;
+      --scrollbar-thumb: #2d3339;
+      --scrollbar-thumb-hover: #3a3f44;
+    }
+
+    /* Стили для полос прокрутки */
+    ::-webkit-scrollbar {
+      width: 14px;
+      height: 14px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--scrollbar-track);
+      border-radius: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+      border: 2px solid var(--scrollbar-track);
+      border-radius: 10px;
+      transition: all 0.2s ease;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--scrollbar-thumb-hover);
+    }
+
+    /* Стили для Firefox */
+    * {
+      scrollbar-width: auto;
+      scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
     }
 
     body {
@@ -141,12 +185,27 @@ document.addEventListener('DOMContentLoaded', () => {
       border-color: var(--btn-hover-border);
     }
 
-    .header-buttons-delete {
+    .header-buttons {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .header-buttons-container {
       display: flex;
       flex-direction: column;
+      gap: 4px;
+    }
+
+    .header-buttons-row {
+      display: flex;
+      gap: 4px;
+    }
+
+    .header-buttons-delete {
+      display: flex;
       align-items: center;
-      gap: 8px;
-      margin-left: 16px;
+      margin-left: 8px;
     }
 
     .lang-btn {
@@ -717,8 +776,22 @@ document.addEventListener('DOMContentLoaded', () => {
       background: var(--btn-bg);
       color: var(--btn-color);
       cursor: pointer;
-      font-size: 12px;
+      font-size: 13px;
       transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    .prompt-btn.pin-prompt {
+      width: 32px;
+      padding: 4px;
+    }
+
+    .prompt-btn:not(.pin-prompt) {
+      min-width: 80px;
     }
 
     .prompt-btn:hover {
@@ -811,6 +884,33 @@ document.addEventListener('DOMContentLoaded', () => {
       border-color: var(--btn-hover-border);
       transform: translateY(-1px);
     }
+
+    .tabs {
+      display: flex;
+      gap: 12px;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      border: none;
+      background: none;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 500;
+      opacity: 0.7;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      opacity: 1;
+    }
+
+    .tab-btn.active {
+      color: var(--text-color);
+      opacity: 1;
+      font-weight: 600;
+    }
   `;
   document.head.appendChild(globalStyle);
   
@@ -826,20 +926,20 @@ document.addEventListener('DOMContentLoaded', () => {
     form.className = 'edit-form';
     form.innerHTML = `
       <div class="form-group">
-        <label for="editTitle_${favorite.timestamp}">Название</label>
-        <input type="text" id="editTitle_${favorite.timestamp}" class="edit-title" placeholder="Введите название" value="${favorite.title || ''}">
+        <label for="editTitle_${favorite.timestamp}">Title</label>
+        <input type="text" id="editTitle_${favorite.timestamp}" class="edit-title" placeholder="Enter title" value="${favorite.title || ''}">
       </div>
       <div class="form-group">
-        <label for="editTags_${favorite.timestamp}">Теги</label>
-        <input type="text" id="editTags_${favorite.timestamp}" class="edit-tags" placeholder="Добавьте теги через пробел" value="${(favorite.tags || []).join(' ')}">
+        <label for="editTags_${favorite.timestamp}">Tags</label>
+        <input type="text" id="editTags_${favorite.timestamp}" class="edit-tags" placeholder="Add space-separated tags" value="${(favorite.tags || []).join(' ')}">
       </div>
       <div class="form-group">
-        <label for="editDescription_${favorite.timestamp}">Описание</label>
-        <textarea id="editDescription_${favorite.timestamp}" class="edit-description" placeholder="Добавьте описание чата">${favorite.description || ''}</textarea>
+        <label for="editDescription_${favorite.timestamp}">Description</label>
+        <textarea id="editDescription_${favorite.timestamp}" class="edit-description" placeholder="Add chat description">${favorite.description || ''}</textarea>
       </div>
       <div class="button-group">
-        <button type="button" class="btn btn-secondary cancel-edit" data-action="cancel">Отмена</button>
-        <button type="button" class="btn btn-primary save-edit" data-action="save">Сохранить</button>
+        <button type="button" class="btn btn-secondary cancel-edit" data-action="cancel">Cancel</button>
+        <button type="button" class="btn btn-primary save-edit" data-action="save">Save</button>
       </div>
     `;
 
@@ -1081,7 +1181,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Обработка клика по кнопке удаления
     if (deleteBtn) {
       console.log('Delete button clicked for favorite:', favorite);
-      if (confirm('Вы уверены, что хотите удалить этот чат из избранного?')) {
+      if (confirm('Are you sure you want to delete this chat from favorites?')) {
         chatElement.style.animation = 'slideOut 0.3s ease forwards';
         setTimeout(() => {
           const newFavorites = currentFavorites.filter(f => f.timestamp !== timestamp);
@@ -1187,13 +1287,13 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="chat-item ${favorite.pinned ? 'pinned' : ''}">
           <div class="chat-header">
             <a href="${favorite.url}" target="_blank" class="chat-title">
-              ${favorite.pinned ? '📌 ' : ''}${favorite.title || 'Без названия'}
+              ${favorite.pinned ? '📌 ' : ''}${favorite.title || 'Untitled'}
             </a>
             <div class="button-group">
-              <button type="button" class="pin-btn" title="${favorite.pinned ? 'Открепить' : 'Закрепить'}">${favorite.pinned ? '📌' : '📍'}</button>
-              <button type="button" class="edit-btn" title="Редактировать">✎</button>
-              <button type="button" class="delete-btn" title="Удалить">×</button>
-        </div>
+              <button type="button" class="pin-btn" title="${favorite.pinned ? 'Unpin' : 'Pin'}">${favorite.pinned ? '📌' : '📍'}</button>
+              <button type="button" class="edit-btn" title="Edit">✎</button>
+              <button type="button" class="delete-btn" title="Delete">×</button>
+            </div>
           </div>
           <div class="chat-time">${chatTime}</div>
           ${truncatedDescription ? `<div class="description" title="${favorite.description}">${truncatedDescription}</div>` : ''}
@@ -1256,7 +1356,7 @@ document.addEventListener('DOMContentLoaded', () => {
       exportDate: new Date().toISOString(),
       theme: document.body.getAttribute('data-theme') || 'light',
       favorites: favorites.map(favorite => ({
-        title: favorite.title || 'Без названия',
+        title: favorite.title || 'Untitled',
         url: favorite.url,
         timestamp: favorite.timestamp,
         description: favorite.description || '',
@@ -1266,7 +1366,7 @@ document.addEventListener('DOMContentLoaded', () => {
       })),
       prompts: prompts.map(prompt => ({
         id: prompt.id,
-        title: prompt.title || 'Без названия',
+        title: prompt.title || 'Untitled',
         text: prompt.text,
         tags: prompt.tags || [],
         createdAt: prompt.createdAt,
@@ -1305,7 +1405,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           
           return {
-            title: favorite.title || 'Без названия',
+            title: favorite.title || 'Untitled',
             url: favorite.url,
             timestamp: favorite.timestamp || new Date().toISOString(),
             description: favorite.description || '',
@@ -1326,7 +1426,7 @@ document.addEventListener('DOMContentLoaded', () => {
           
           return {
             id: prompt.id || Date.now().toString(),
-            title: prompt.title || 'Без названия',
+            title: prompt.title || 'Untitled',
             text: prompt.text,
             tags: prompt.tags || [],
             createdAt: prompt.createdAt || new Date().toISOString(),
@@ -1372,20 +1472,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Получаем текущие данные
         chrome.storage.sync.get(['favorites', 'prompts'], (result) => {
-          const currentFavorites = result.favorites || [];
-          const currentPrompts = result.prompts || [];
+          const existingFavorites = result.favorites || [];
+          const existingPrompts = result.prompts || [];
 
           // Находим новые закладки и промпты
           const newFavorites = imported.favorites.filter(imported => 
-            !currentFavorites.some(current => current.url === imported.url)
+            !existingFavorites.some(current => current.url === imported.url)
           );
           const newPrompts = imported.prompts.filter(imported => 
-            !currentPrompts.some(current => current.id === imported.id)
+            !existingPrompts.some(current => current.id === imported.id)
           );
 
           // Объединяем текущие и новые данные
-          const updatedFavorites = [...currentFavorites, ...newFavorites];
-          const updatedPrompts = [...currentPrompts, ...newPrompts];
+          const updatedFavorites = [...existingFavorites, ...newFavorites];
+          const updatedPrompts = [...existingPrompts, ...newPrompts];
 
           // Сохраняем обновленные данные и тему
           chrome.storage.sync.set({ 
@@ -1393,297 +1493,46 @@ document.addEventListener('DOMContentLoaded', () => {
             prompts: updatedPrompts,
             theme: imported.theme 
           }, () => {
+            // Очищаем поля поиска
             searchInput.value = '';
             promptSearchInput.value = '';
+            
+            // Обновляем текущие данные в памяти
+            currentFavorites = updatedFavorites;
+            currentPrompts = updatedPrompts;
             
             // Обновляем тему
             setTheme(imported.theme);
             
             // Обновляем отображение
-            renderFavorites(updatedFavorites);
-            renderPrompts(updatedPrompts);
+            renderFavorites(currentFavorites);
+            renderPrompts(currentPrompts);
 
             // Показываем сообщение об успешном импорте
             let message = [];
             if (newFavorites.length > 0) {
-              message.push(`${newFavorites.length} новых закладок`);
+              message.push(`${newFavorites.length} new favorites`);
             }
             if (newPrompts.length > 0) {
-              message.push(`${newPrompts.length} новых промптов`);
+              message.push(`${newPrompts.length} new prompts`);
             }
             
             if (message.length > 0) {
-              alert(`Успешно импортировано: ${message.join(' и ')}`);
+              alert(`Successfully imported: ${message.join(' and ')}`);
             } else {
-              alert('Все импортированные элементы уже существуют в списке');
+              alert('All imported items already exist in the list');
             }
           });
-
         });
-
       } catch (error) {
         console.error('Error during import:', error);
-        alert('Произошла ошибка при импорте. Проверьте консоль для деталей.');
+        alert('Error during import. Check console for details.');
       }
     };
     reader.readAsText(file);
     // Очищаем input file, чтобы можно было импортировать тот же файл повторно
     event.target.value = '';
   });
-
-  // Функция для установки темы
-  function setTheme(theme) {
-    document.body.setAttribute('data-theme', theme);
-    chrome.storage.sync.set({ theme: theme });
-    
-    // Обновляем активную кнопку
-    lightThemeBtn.classList.toggle('active', theme === 'light');
-    darkThemeBtn.classList.toggle('active', theme === 'dark');
-  }
-
-  // Загружаем сохраненную тему
-  chrome.storage.sync.get(['theme'], (result) => {
-    const savedTheme = result.theme || 'light';
-    setTheme(savedTheme);
-  });
-
-  // Обработчики переключения темы
-  lightThemeBtn.addEventListener('click', () => setTheme('light'));
-  darkThemeBtn.addEventListener('click', () => setTheme('dark'));
-
-  // Добавляем обработчик клика для кнопки импорта
-  const importBtn = document.querySelector('button[for="importFile"]');
-  importBtn.addEventListener('click', () => {
-    document.getElementById('importFile').click();
-  });
-
-  // Обновляем функцию очистки
-  function clearAllData() {
-    const confirmClear = confirm('Вы уверены, что хотите удалить все сохраненные данные? Это действие нельзя отменить.');
-    
-    if (confirmClear) {
-      chrome.storage.sync.clear(() => {
-        if (chrome.runtime.lastError) {
-          console.error('Error clearing data:', chrome.runtime.lastError);
-          alert('Произошла ошибка при очистке данных.');
-        } else {
-          // Сбрасываем тему на светлую
-          setTheme('light');
-          
-          // Очищаем все данные
-          currentFavorites = [];
-          
-          // Очищаем поля поиска
-          searchInput.value = '';
-          promptSearchInput.value = '';
-          
-          // Обновляем отображение
-          renderFavorites([]);
-          renderPrompts([]);
-          
-          // Принудительно очищаем контейнеры с тегами
-          const favoritesTagsContainer = favoritesSection.querySelector('.popular-tags');
-          const promptsTagsContainer = promptsSection.querySelector('.popular-tags');
-          if (favoritesTagsContainer) favoritesTagsContainer.innerHTML = '';
-          if (promptsTagsContainer) promptsTagsContainer.innerHTML = '';
-          
-          alert('Все данные успешно удалены.');
-        }
-      });
-    }
-  }
-
-  // Добавляем обработчик для кнопки очистки
-  clearDataBtn.addEventListener('click', clearAllData);
-
-  // Получаем элементы вкладок
-  const favoritesTab = document.getElementById('favoritesTab');
-  const promptsTab = document.getElementById('promptsTab');
-  const favoritesSection = document.getElementById('favoritesSection');
-  const promptsSection = document.getElementById('promptsSection');
-  const promptsList = document.getElementById('promptsList');
-  const addPromptBtn = document.getElementById('addPromptBtn');
-  const promptSearchInput = document.getElementById('promptSearchInput');
-
-  // Функция переключения вкладок
-  function switchTab(tab, section) {
-    // Убираем активный класс у всех вкладок и секций
-    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    
-    // Добавляем активный класс выбранной вкладке и секции
-    tab.classList.add('active');
-    section.classList.add('active');
-
-    // Если открыта вкладка промптов, загружаем их
-    if (section === promptsSection) {
-      loadPrompts();
-    }
-  }
-
-  // Обработчики переключения вкладок
-  favoritesTab.addEventListener('click', () => switchTab(favoritesTab, favoritesSection));
-  promptsTab.addEventListener('click', () => switchTab(promptsTab, promptsSection));
-
-  // Загрузка промптов
-  function loadPrompts() {
-    chrome.storage.sync.get(['prompts'], (result) => {
-      const prompts = result.prompts || [];
-      renderPrompts(prompts);
-    });
-  }
-
-  // Функция для обновления популярных тегов
-  function updatePopularTags(prompts, container, searchInput, maxTags = 8) {
-    // Создаем контейнер для популярных тегов, если его еще нет
-    let popularTagsContainer = container.querySelector('.popular-tags');
-    if (!popularTagsContainer) {
-      popularTagsContainer = document.createElement('div');
-      popularTagsContainer.className = 'popular-tags';
-      // Вставляем после поля поиска
-      searchInput.parentNode.after(popularTagsContainer);
-    }
-
-    // Собираем все теги и их частоту
-    const tagFrequency = {};
-    prompts.forEach(item => {
-      if (item.tags) {
-        item.tags.forEach(tag => {
-          tagFrequency[tag] = (tagFrequency[tag] || 0) + 1;
-        });
-      }
-    });
-
-    // Сортируем теги по частоте и берем топ-N
-    const popularTags = Object.entries(tagFrequency)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, maxTags)
-      .map(([tag]) => tag);
-
-    // Отображаем популярные теги
-    popularTagsContainer.innerHTML = popularTags.length > 0
-      ? `<div class="popular-tags-label">Популярные теги:</div>
-         <div class="popular-tags-list">
-           ${popularTags.map(tag => `<span class="tag popular-tag">#${tag}</span>`).join('')}
-         </div>`
-      : '';
-  }
-
-  // Обновляем функцию renderPrompts
-  function renderPrompts(prompts) {
-    promptsList.innerHTML = '';
-    
-    // Обновляем популярные теги
-    updatePopularTags(prompts, promptsSection, promptSearchInput);
-    
-    if (prompts.length === 0) {
-      promptsList.innerHTML = '<div class="no-prompts">Нет сохраненных промптов</div>';
-      return;
-    }
-
-    // Сортируем: сначала закрепленные, потом остальные
-    const sortedPrompts = [...prompts].sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      if (a.pinned && b.pinned) {
-        return (a.pinnedOrder || 0) - (b.pinnedOrder || 0);
-      }
-      return 0;
-    });
-
-    // Создаем контейнеры для закрепленных и обычных промптов
-    const pinnedContainer = document.createElement('div');
-    pinnedContainer.className = 'pinned-container';
-    const unpinnedContainer = document.createElement('div');
-    unpinnedContainer.className = 'unpinned-container';
-    promptsList.appendChild(pinnedContainer);
-    promptsList.appendChild(unpinnedContainer);
-
-    // Функция обновления порядка закрепленных промптов
-    function updatePinnedOrder() {
-      const pinnedPrompts = Array.from(pinnedContainer.children);
-      const newOrder = {};
-      
-      pinnedPrompts.forEach((prompt, index) => {
-        const promptId = prompt.querySelector('.prompt-actions').dataset.id;
-        newOrder[promptId] = index;
-      });
-
-      chrome.storage.sync.get(['prompts'], (result) => {
-        const prompts = result.prompts || [];
-        const newPrompts = prompts.map(p => ({
-          ...p,
-          pinnedOrder: p.pinned ? newOrder[p.id] : undefined
-        }));
-
-        chrome.storage.sync.set({ prompts: newPrompts });
-      });
-    }
-
-    sortedPrompts.forEach(prompt => {
-      const promptElement = document.createElement('div');
-      promptElement.className = 'prompt-item';
-      if (prompt.pinned) {
-        promptElement.setAttribute('draggable', 'true');
-      }
-      
-      // Обрезаем текст промпта до 120 символов
-      const truncatedText = prompt.text.length > 120 ? 
-        prompt.text.substring(0, 120) + '...' : 
-        prompt.text;
-      
-      promptElement.innerHTML = `
-        <div class="prompt-title">${prompt.pinned ? '📌 ' : ''}${prompt.title}</div>
-        <div class="prompt-text" title="${prompt.text}">${truncatedText}</div>
-        ${prompt.tags && prompt.tags.length > 0 ? 
-          `<div class="prompt-tags">${prompt.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
-          : ''}
-        <div class="prompt-actions" data-id="${prompt.id}">
-          <button class="prompt-btn pin-prompt" title="${prompt.pinned ? 'Открепить' : 'Закрепить'}">${prompt.pinned ? '📌' : '📍'}</button>
-          <button class="prompt-btn edit-prompt">✎ Изменить</button>
-          <button class="prompt-btn delete-prompt">🗑️ Удалить</button>
-          <button class="prompt-btn copy-prompt">📋 Копировать</button>
-        </div>
-      `;
-
-      // Добавляем обработчики для drag and drop
-      if (prompt.pinned) {
-        promptElement.addEventListener('dragstart', (e) => {
-          e.dataTransfer.setData('text/plain', prompt.id);
-          promptElement.classList.add('dragging');
-          promptElement.style.opacity = '0.5';
-        });
-
-        promptElement.addEventListener('dragend', () => {
-          promptElement.classList.remove('dragging');
-          promptElement.style.opacity = '1';
-          updatePinnedOrder();
-        });
-
-        promptElement.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          const draggingElement = document.querySelector('.dragging');
-          if (!draggingElement || draggingElement === promptElement) return;
-
-          const rect = promptElement.getBoundingClientRect();
-          const midY = rect.top + rect.height / 2;
-          
-          if (e.clientY < midY) {
-            pinnedContainer.insertBefore(draggingElement, promptElement);
-          } else {
-            pinnedContainer.insertBefore(draggingElement, promptElement.nextSibling);
-          }
-        });
-      }
-      
-      // Добавляем в соответствующий контейнер
-      if (prompt.pinned) {
-        pinnedContainer.appendChild(promptElement);
-      } else {
-        unpinnedContainer.appendChild(promptElement);
-      }
-    });
-  }
 
   // Функция для фильтрации промптов
   function filterPrompts(query) {
@@ -1792,7 +1641,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Обработка клика по кнопке удаления
       else if (button.classList.contains('delete-prompt')) {
-        if (confirm('Вы уверены, что хотите удалить этот промпт?')) {
+        if (confirm('Are you sure you want to delete this prompt?')) {
           const newPrompts = prompts.filter(p => p.id !== promptId);
           chrome.storage.sync.set({ prompts: newPrompts }, () => {
             renderPrompts(newPrompts);
@@ -1804,7 +1653,7 @@ document.addEventListener('DOMContentLoaded', () => {
       else if (button.classList.contains('copy-prompt')) {
         navigator.clipboard.writeText(prompt.text).then(() => {
           const originalText = button.textContent;
-          button.textContent = '✓ Скопировано';
+          button.textContent = '✓ Copied';
           setTimeout(() => {
             button.textContent = originalText;
           }, 2000);
@@ -1830,6 +1679,225 @@ document.addEventListener('DOMContentLoaded', () => {
       if (promptsSection.classList.contains('active')) {
         renderPrompts(changes.prompts.newValue || []);
       }
+    }
+  });
+
+  // Функция переключения вкладок
+  function switchTab(tab, section) {
+    // Убираем активный класс у всех вкладок и секций
+    document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    
+    // Добавляем активный класс выбранной вкладке и секции
+    tab.classList.add('active');
+    section.classList.add('active');
+
+    // Если открыта вкладка промптов, загружаем их
+    if (section === promptsSection) {
+      loadPrompts();
+    }
+  }
+
+  // Обработчики переключения вкладок
+  favoritesTab.addEventListener('click', () => switchTab(favoritesTab, favoritesSection));
+  promptsTab.addEventListener('click', () => switchTab(promptsTab, promptsSection));
+
+  // Загрузка промптов
+  function loadPrompts() {
+    chrome.storage.sync.get(['prompts'], (result) => {
+      const prompts = result.prompts || [];
+      renderPrompts(prompts);
+    });
+  }
+
+  // Функция для обновления популярных тегов
+  function updatePopularTags(prompts, container, searchInput, maxTags = 8) {
+    // Создаем контейнер для популярных тегов, если его еще нет
+    let popularTagsContainer = container.querySelector('.popular-tags');
+    if (!popularTagsContainer) {
+      popularTagsContainer = document.createElement('div');
+      popularTagsContainer.className = 'popular-tags';
+      // Вставляем после поля поиска
+      searchInput.parentNode.after(popularTagsContainer);
+    }
+
+    // Собираем все теги и их частоту
+    const tagFrequency = {};
+    prompts.forEach(item => {
+      if (item.tags) {
+        item.tags.forEach(tag => {
+          tagFrequency[tag] = (tagFrequency[tag] || 0) + 1;
+        });
+      }
+    });
+
+    // Сортируем теги по частоте и берем топ-N
+    const popularTags = Object.entries(tagFrequency)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxTags)
+      .map(([tag]) => tag);
+
+    // Отображаем популярные теги
+    popularTagsContainer.innerHTML = popularTags.length > 0
+      ? `<div class="popular-tags-label">Popular tags:</div>
+         <div class="popular-tags-list">
+           ${popularTags.map(tag => `<span class="tag popular-tag">#${tag}</span>`).join('')}
+         </div>`
+      : '';
+  }
+
+  // Обновляем функцию renderPrompts
+  function renderPrompts(prompts) {
+    promptsList.innerHTML = '';
+    
+    // Обновляем популярные теги
+    updatePopularTags(prompts, promptsSection, promptSearchInput);
+    
+    if (prompts.length === 0) {
+      promptsList.innerHTML = '<div class="no-prompts">Нет сохраненных промптов</div>';
+      return;
+    }
+
+    // Сортируем: сначала закрепленные, потом остальные
+    const sortedPrompts = [...prompts].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      if (a.pinned && b.pinned) {
+        return (a.pinnedOrder || 0) - (b.pinnedOrder || 0);
+      }
+      return 0;
+    });
+
+    // Создаем контейнеры для закрепленных и обычных промптов
+    const pinnedContainer = document.createElement('div');
+    pinnedContainer.className = 'pinned-container';
+    const unpinnedContainer = document.createElement('div');
+    unpinnedContainer.className = 'unpinned-container';
+    promptsList.appendChild(pinnedContainer);
+    promptsList.appendChild(unpinnedContainer);
+
+    // Функция обновления порядка закрепленных промптов
+    function updatePinnedOrder() {
+      const pinnedPrompts = Array.from(pinnedContainer.children);
+      const newOrder = {};
+      
+      pinnedPrompts.forEach((prompt, index) => {
+        const promptId = prompt.querySelector('.prompt-actions').dataset.id;
+        newOrder[promptId] = index;
+      });
+
+      chrome.storage.sync.get(['prompts'], (result) => {
+        const prompts = result.prompts || [];
+        const newPrompts = prompts.map(p => ({
+          ...p,
+          pinnedOrder: p.pinned ? newOrder[p.id] : undefined
+        }));
+
+        chrome.storage.sync.set({ prompts: newPrompts });
+      });
+    }
+
+    sortedPrompts.forEach(prompt => {
+      const promptElement = document.createElement('div');
+      promptElement.className = 'prompt-item';
+      if (prompt.pinned) {
+        promptElement.setAttribute('draggable', 'true');
+      }
+      
+      // Обрезаем текст промпта до 120 символов
+      const truncatedText = prompt.text.length > 120 ? 
+        prompt.text.substring(0, 120) + '...' : 
+        prompt.text;
+      
+      promptElement.innerHTML = `
+        <div class="prompt-title">${prompt.pinned ? '📌 ' : ''}${prompt.title}</div>
+        <div class="prompt-text" title="${prompt.text}">${truncatedText}</div>
+        ${prompt.tags && prompt.tags.length > 0 ? 
+          `<div class="prompt-tags">${prompt.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
+          : ''}
+        <div class="prompt-actions" data-id="${prompt.id}">
+          <button class="prompt-btn pin-prompt" title="${prompt.pinned ? 'Unpin' : 'Pin'}">${prompt.pinned ? '📌' : '📍'}</button>
+          <button class="prompt-btn edit-prompt">✎ Edit</button>
+          <button class="prompt-btn delete-prompt">🗑️ Delete</button>
+          <button class="prompt-btn copy-prompt">📋Copy Prompt</button>
+        </div>
+      `;
+
+      // Добавляем обработчики для drag and drop
+      if (prompt.pinned) {
+        promptElement.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData('text/plain', prompt.id);
+          promptElement.classList.add('dragging');
+          promptElement.style.opacity = '0.5';
+        });
+
+        promptElement.addEventListener('dragend', () => {
+          promptElement.classList.remove('dragging');
+          promptElement.style.opacity = '1';
+          updatePinnedOrder();
+        });
+
+        promptElement.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          const draggingElement = document.querySelector('.dragging');
+          if (!draggingElement || draggingElement === promptElement) return;
+
+          const rect = promptElement.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+          
+          if (e.clientY < midY) {
+            pinnedContainer.insertBefore(draggingElement, promptElement);
+          } else {
+            pinnedContainer.insertBefore(draggingElement, promptElement.nextSibling);
+          }
+        });
+      }
+      
+      // Добавляем в соответствующий контейнер
+      if (prompt.pinned) {
+        pinnedContainer.appendChild(promptElement);
+      } else {
+        unpinnedContainer.appendChild(promptElement);
+      }
+    });
+  }
+
+  // Add click handler for import button
+  const importBtn = document.querySelector('button[for="importFile"]');
+  importBtn.addEventListener('click', () => {
+    document.getElementById('importFile').click();
+  });
+
+  // Add click handler for clear data button
+  clearDataBtn.addEventListener('click', () => {
+    if (confirm('Are you sure you want to delete all data? This action cannot be undone.')) {
+      chrome.storage.sync.clear(() => {
+        if (chrome.runtime.lastError) {
+          console.error('Error clearing data:', chrome.runtime.lastError);
+          alert('Error clearing data.');
+        } else {
+          // Reset theme to light
+          setTheme('light');
+          
+          // Clear all data
+          currentFavorites = [];
+          currentPrompts = [];
+          
+          // Clear search fields
+          searchInput.value = '';
+          promptSearchInput.value = '';
+          
+          // Remove popular tags containers
+          const favoritesPopularTags = favoritesSection.querySelector('.popular-tags');
+          const promptsPopularTags = promptsSection.querySelector('.popular-tags');
+          if (favoritesPopularTags) favoritesPopularTags.remove();
+          if (promptsPopularTags) promptsPopularTags.remove();
+          
+          // Update display
+          renderFavorites([]);
+          renderPrompts([]);
+        }
+      });
     }
   });
 }); 
