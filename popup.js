@@ -1300,9 +1300,63 @@ document.addEventListener('DOMContentLoaded', () => {
           ${favorite.tags && favorite.tags.length > 0 ? 
             `<div class="prompt-tags">${favorite.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
             : ''}
+          <button type="button" class="chat-btn" title="View Chat History">💬 Chat</button>
         </div>
       `;
-      
+
+      // Добавляем обработчики событий для кнопок
+      const chatBtn = chatElement.querySelector('.chat-btn');
+      const pinBtn = chatElement.querySelector('.pin-btn');
+      const editBtn = chatElement.querySelector('.edit-btn');
+      const deleteBtn = chatElement.querySelector('.delete-btn');
+
+      // Обработчик для кнопки Chat
+      chatBtn.addEventListener('click', () => {
+        console.log('Opening chat window for:', favorite);
+        chrome.windows.create({
+          url: `chat-viewer.html?id=${favorite.timestamp}`,
+          type: 'popup',
+          width: 800,
+          height: 600
+        });
+      });
+
+      // Обработчик для кнопки Pin
+      pinBtn.addEventListener('click', () => {
+        const newPinned = !favorite.pinned;
+        const newFavorites = currentFavorites.map(f => {
+          if (f.timestamp === favorite.timestamp) {
+            return { 
+              ...f, 
+              pinned: newPinned,
+              pinnedOrder: newPinned ? currentFavorites.filter(x => x.pinned).length : undefined
+            };
+          }
+          return f;
+        });
+        
+        chrome.storage.sync.set({ favorites: newFavorites }, () => {
+          currentFavorites = newFavorites;
+          filterFavorites(searchInput.value);
+        });
+      });
+
+      // Обработчик для кнопки Edit
+      editBtn.addEventListener('click', () => {
+        startEdit(favorite);
+      });
+
+      // Обработчик для кнопки Delete
+      deleteBtn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to delete this chat from favorites?')) {
+          const newFavorites = currentFavorites.filter(f => f.timestamp !== favorite.timestamp);
+          chrome.storage.sync.set({ favorites: newFavorites }, () => {
+            currentFavorites = newFavorites;
+            filterFavorites(searchInput.value);
+          });
+        }
+      });
+
       // Обработчики для drag and drop
       if (favorite.pinned) {
         chatElement.addEventListener('dragstart', (e) => {
@@ -1900,4 +1954,181 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   });
+
+  // Функция для создания элемента избранного
+  function createFavoriteElement(favorite) {
+    const favoriteElement = document.createElement('div');
+    favoriteElement.className = 'favorite-chat';
+    favoriteElement.setAttribute('data-timestamp', favorite.timestamp);
+    
+    const chatTime = new Date(favorite.timestamp).toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    // Обрезаем описание до 120 символов
+    const truncatedDescription = favorite.description ? truncateText(favorite.description, 120) : '';
+    
+    favoriteElement.innerHTML = `
+      <div class="chat-item ${favorite.pinned ? 'pinned' : ''}">
+        <div class="chat-header">
+          <a href="${favorite.url}" target="_blank" class="chat-title">
+            ${favorite.pinned ? '📌 ' : ''}${favorite.title || 'Untitled'}
+          </a>
+          <div class="button-group">
+            <button type="button" class="pin-btn" title="${favorite.pinned ? 'Unpin' : 'Pin'}">${favorite.pinned ? '📌' : '📍'}</button>
+            <button type="button" class="edit-btn" title="Edit">✎</button>
+            <button type="button" class="delete-btn" title="Delete">×</button>
+          </div>
+        </div>
+        <div class="chat-time">${chatTime}</div>
+        ${truncatedDescription ? `<div class="description" title="${favorite.description}">${truncatedDescription}</div>` : ''}
+        ${favorite.tags && favorite.tags.length > 0 ? 
+          `<div class="prompt-tags">${favorite.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
+          : ''}
+        <button type="button" class="chat-btn" title="View Chat History">💬 Chat</button>
+      </div>
+    `;
+
+    // Добавляем обработчики событий
+    const chatBtn = favoriteElement.querySelector('.chat-btn');
+    chatBtn.addEventListener('click', () => {
+      console.log('Opening chat window for:', favorite);
+      chrome.windows.create({
+        url: `chat-viewer.html?id=${favorite.timestamp}`,
+        type: 'popup',
+        width: 800,
+        height: 600
+      });
+    });
+
+    // ... остальные обработчики событий ...
+
+    return favoriteElement;
+  }
+
+  // Функция для открытия модального окна с чатом
+  function openChatModal(favorite) {
+    const modal = document.getElementById('chatModal');
+    const modalTitle = modal.querySelector('.modal-title');
+    const modalContent = modal.querySelector('#chatContent');
+    const closeBtn = modal.querySelector('.modal-close');
+    const copyBtn = modal.querySelector('.copy-btn');
+
+    // Устанавливаем заголовок
+    modalTitle.textContent = `Chat History: ${favorite.title}`;
+
+    // Загружаем содержимое чата
+    chrome.storage.local.get([`${favorite.timestamp}_meta`], async (metaResult) => {
+      if (metaResult[`${favorite.timestamp}_meta`]) {
+        const meta = metaResult[`${favorite.timestamp}_meta`];
+        const chunks = [];
+        
+        // Загружаем все чанки
+        for (let i = 0; i < meta.chunks; i++) {
+          const key = `${favorite.timestamp}_chunk_${i}`;
+          const chunk = await new Promise(resolve => {
+            chrome.storage.local.get([key], result => resolve(result[key]));
+          });
+          chunks.push(chunk);
+        }
+        
+        // Собираем и парсим содержимое
+        const chatContent = JSON.parse(chunks.join(''));
+        
+        // Отображаем содержимое чата
+        const chatHtml = chatContent.map(message => {
+          if (message.type === 'question') {
+            return `
+              <div class="chat-message user-message">
+                <div class="message-header">User:</div>
+                <div class="message-content">${escapeHtml(message.content)}</div>
+              </div>
+            `;
+          } else {
+            return `
+              <div class="chat-message assistant-message">
+                <div class="message-header">Assistant:</div>
+                <div class="message-content">${escapeHtml(message.content)}</div>
+              </div>
+            `;
+          }
+        }).join('');
+
+        modalContent.innerHTML = `
+          <div class="chat-container">
+            ${chatHtml}
+          </div>
+        `;
+
+        // Показываем кнопку копирования
+        copyBtn.style.display = 'block';
+
+        // Добавляем обработчик копирования
+        const handleCopy = () => {
+          const textToCopy = chatContent.map(message => {
+            const role = message.type === 'question' ? 'User' : 'Assistant';
+            return `${role}:\n${message.content}\n`;
+          }).join('\n');
+
+          navigator.clipboard.writeText(textToCopy).then(() => {
+            const originalText = copyBtn.innerHTML;
+            copyBtn.innerHTML = '✅ Copied!';
+            setTimeout(() => {
+              copyBtn.innerHTML = originalText;
+            }, 2000);
+          }).catch(err => {
+            console.error('Failed to copy text: ', err);
+            copyBtn.innerHTML = '❌ Error';
+            setTimeout(() => {
+              copyBtn.innerHTML = originalText;
+            }, 2000);
+          });
+        };
+
+        copyBtn.addEventListener('click', handleCopy);
+      } else {
+        modalContent.innerHTML = `
+          <p>No chat history available for "${escapeHtml(favorite.title)}"</p>
+          <p>URL: ${escapeHtml(favorite.url)}</p>
+        `;
+        copyBtn.style.display = 'none';
+      }
+
+      // Показываем модальное окно
+      modal.classList.add('active');
+
+      // Обработчик закрытия
+      const closeModal = () => {
+        modal.classList.remove('active');
+        closeBtn.removeEventListener('click', closeModal);
+        modal.removeEventListener('click', handleOutsideClick);
+        copyBtn.removeEventListener('click', handleCopy);
+      };
+
+      // Закрытие по клику на крестик
+      closeBtn.addEventListener('click', closeModal);
+
+      // Закрытие по клику вне модального окна
+      const handleOutsideClick = (event) => {
+        if (event.target === modal) {
+          closeModal();
+        }
+      };
+      modal.addEventListener('click', handleOutsideClick);
+    });
+  }
+
+  // Функция для экранирования HTML
+  function escapeHtml(unsafe) {
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
 }); 

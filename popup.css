@@ -218,6 +218,8 @@ body {
   border-radius: 8px;
   padding: 12px;
   transition: all 0.2s ease;
+  position: relative;
+  padding-bottom: 40px;
 }
 
 .favorite-item:hover,
@@ -298,4 +300,195 @@ body {
   font-size: 14px;
   border: 1px dashed var(--border-color);
   border-radius: 8px;
+}
+
+.button-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.button-group button {
+  padding: 4px;
+  border: none;
+  background: none;
+  color: var(--btn-color);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+  font-size: 16px;
+}
+
+.button-group button:hover {
+  background: var(--btn-hover-bg);
+  opacity: 1;
+}
+
+/* Обновленные стили для кнопки Chat */
+.chat-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background-color: var(--btn-bg);
+  color: var(--btn-color);
+  border: 1px solid var(--btn-border);
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-btn:hover {
+  background-color: var(--btn-hover-bg);
+  border-color: var(--btn-hover-border);
+  transform: translateY(-1px);
+}
+
+.chat-item {
+  position: relative;
+  padding-bottom: 40px !important;
+}
+
+/* Стили для модального окна */
+.modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal.active {
+  display: flex;
+}
+
+.modal-content {
+  background-color: var(--bg-color);
+  border-radius: 8px;
+  padding: 16px;
+  width: 600px;
+  height: 500px;
+  max-width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border-color);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-title {
+  flex-grow: 1;
+  margin-right: 10px;
+}
+
+.copy-btn {
+  background: none;
+  border: 1px solid var(--btn-border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 6px 12px;
+  margin-right: 10px;
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.copy-btn:hover {
+  background: var(--btn-hover-bg);
+  border-color: var(--btn-hover-border);
+  transform: translateY(-1px);
+}
+
+.copy-btn:active {
+  transform: translateY(0);
+}
+
+/* Стили для состояния успешного копирования */
+.copy-btn.success {
+  color: #28a745;
+  border-color: #28a745;
+}
+
+/* Стили для состояния ошибки копирования */
+.copy-btn.error {
+  color: #dc3545;
+  border-color: #dc3545;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-color);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.modal-close:hover {
+  opacity: 0.7;
+}
+
+.modal-body {
+  color: var(--text-color);
+  height: calc(100% - 50px);
+  overflow-y: auto;
+}
+
+/* Стили для сообщений в чате */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px;
+}
+
+.chat-message {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--btn-bg);
+  border: 1px solid var(--border-color);
+}
+
+.user-message {
+  margin-left: 20px;
+  border-left: 3px solid #0d6efd;
+}
+
+.assistant-message {
+  margin-right: 20px;
+  border-left: 3px solid #198754;
+}
+
+.message-header {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-color);
+  font-size: 14px;
+}
+
+.message-content {
+  color: var(--text-color);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 } 

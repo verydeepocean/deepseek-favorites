@@ -50,7 +50,7 @@ function showNotification(message, isWarning = false) {
   const [title, text] = message.split('\n');
   notification.innerHTML = `
     <div style="font-weight: bold; margin-bottom: 4px;">${title}</div>
-    <div style="font-size: 12px; opacity: 0.9;">${text || ''}</div>
+    ${text ? `<div style="font-size: 12px; opacity: 0.9; word-wrap: break-word;">${text}</div>` : ''}
   `;
   notification.style.cssText = `
     position: fixed;
@@ -67,6 +67,7 @@ function showNotification(message, isWarning = false) {
     transition: all 0.3s ease;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
     max-width: 300px;
+    word-wrap: break-word;
   `;
   
   // Добавляем уведомление на страницу
@@ -78,42 +79,173 @@ function showNotification(message, isWarning = false) {
     notification.style.transform = 'translateY(0)';
   }, 100);
   
-  // Удаляем через 3 секунды
+  // Удаляем через 5 секунд для ошибок и 3 секунды для обычных уведомлений
   setTimeout(() => {
     notification.style.opacity = '0';
     notification.style.transform = 'translateY(20px)';
     setTimeout(() => notification.remove(), 300);
-  }, 3000);
+  }, isWarning ? 5000 : 3000);
+}
+
+// Функция для получения HTML содержимого сообщения
+function getMessageContent(container) {
+  if (!container) return { text: '', html: '' };
+  
+  // Создаем временный div для очистки текста
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = container.innerHTML;
+  
+  // Удаляем все кнопки и другие ненужные элементы
+  const elementsToRemove = tempDiv.querySelectorAll('button, [class*="ds-icon"], [role="button"]');
+  elementsToRemove.forEach(el => el.remove());
+  
+  // Получаем очищенный текст и HTML
+  const text = tempDiv.textContent.trim()
+    .replace(/\s+/g, ' ') // Заменяем множественные пробелы на один
+    .replace(/^\d+\.\s*/, ''); // Удаляем нумерацию в начале, если есть
+  
+  // Получаем HTML, сохраняя форматирование кода и другие элементы
+  const html = container.innerHTML;
+  
+  return { text, html };
+}
+
+// Функция для получения содержимого чата
+async function getChatContent() {
+  const chatContent = [];
+  
+  // Находим все сообщения в чате
+  const messages = document.querySelectorAll('[class*="chat-message"]');
+  
+  messages.forEach(message => {
+    // Определяем тип сообщения (вопрос или ответ)
+    const isQuestion = message.classList.contains('user') || 
+                      message.querySelector('[class*="user"]') !== null;
+    
+    // Находим контейнер с содержимым сообщения
+    const contentContainer = message.querySelector('[class*="markdown"]') || 
+                           message.querySelector('[class*="content"]');
+    
+    if (contentContainer) {
+      const content = getMessageContent(contentContainer);
+      
+      chatContent.push({
+        type: isQuestion ? 'question' : 'answer',
+        content: content.text,
+        html: content.html
+      });
+    }
+  });
+
+  // Если не нашли сообщения через основной селектор, пробуем альтернативные
+  if (chatContent.length === 0) {
+    const alternativeMessages = document.querySelectorAll('.fbb737a4, .ds-markdown.ds-markdown--block');
+    
+    alternativeMessages.forEach(message => {
+      const isQuestion = message.classList.contains('fbb737a4');
+      const content = getMessageContent(message);
+      
+      chatContent.push({
+        type: isQuestion ? 'question' : 'answer',
+        content: content.text,
+        html: content.html
+      });
+    });
+  }
+
+  return chatContent;
+}
+
+// Функция для разбиения данных на чанки
+function splitIntoChunks(data, maxChunkSize = 8000) {
+  const serialized = JSON.stringify(data);
+  const chunks = [];
+  let index = 0;
+  
+  while (index < serialized.length) {
+    chunks.push(serialized.slice(index, index + maxChunkSize));
+    index += maxChunkSize;
+  }
+  
+  return chunks;
+}
+
+// Функция для сохранения чанков в storage
+async function saveChunks(key, chunks) {
+  const savePromises = chunks.map((chunk, index) => {
+    return new Promise((resolve, reject) => {
+      const chunkKey = `${key}_chunk_${index}`;
+      chrome.storage.local.set({ [chunkKey]: chunk }, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve();
+        }
+      });
+    });
+  });
+
+  await Promise.all(savePromises);
+  
+  // Сохраняем метаданные о чанках
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set({
+      [`${key}_meta`]: {
+        chunks: chunks.length,
+        timestamp: Date.now()
+      }
+    }, () => {
+      if (chrome.runtime.lastError) {
+        reject(chrome.runtime.lastError);
+      } else {
+        resolve();
+      }
+    });
+  });
 }
 
 // Функция для добавления в избранное
 async function addToFavorites(chatTitle, messageText = '') {
   try {
+    // Получаем содержимое чата
+    const chatContent = await getChatContent();
+    
     const favorite = {
-      title: chatTitle,
+      title: chatTitle.slice(0, 200),
       url: window.location.href,
       timestamp: new Date().toISOString(),
-      description: messageText || ''
+      description: messageText.slice(0, 500) || '',
+      hasContent: true
     };
     
     // Сохраняем и ждем результата
     await new Promise((resolve, reject) => {
-      chrome.storage.sync.get(['favorites'], (result) => {
+      chrome.storage.sync.get(['favorites'], async (result) => {
         try {
           const favorites = result.favorites || [];
-          console.log('Current favorites:', favorites);
           
           // Проверяем, нет ли уже такого чата
           if (!favorites.some(f => f.url === favorite.url)) {
             favorites.push(favorite);
-            chrome.storage.sync.set({ favorites }, () => {
+            
+            // Сохраняем метаданные в sync storage
+            chrome.storage.sync.set({ favorites }, async () => {
               if (chrome.runtime.lastError) {
-                console.error('Error saving favorite:', chrome.runtime.lastError);
-                reject(chrome.runtime.lastError);
-              } else {
+                reject(new Error('Storage error: ' + chrome.runtime.lastError.message));
+                return;
+              }
+              
+              try {
+                // Сохраняем содержимое чата в local storage
+                const chunks = splitIntoChunks(chatContent);
+                await saveChunks(favorite.timestamp, chunks);
+                
                 console.log('Favorite saved successfully:', favorite);
                 showNotification(`Added to Favorites! ⭐\n"${chatTitle}"`, false);
                 resolve();
+              } catch (error) {
+                console.error('Error saving chat content:', error);
+                reject(error);
               }
             });
           } else {

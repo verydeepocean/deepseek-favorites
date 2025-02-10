@@ -37,7 +37,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["prompt-editor.html", "prompt-editor.js"],
+      "resources": ["prompt-editor.html", "prompt-editor.js", "chat-viewer.html", "chat-viewer.js"],
       "matches": ["<all_urls>"]
     }
   ]

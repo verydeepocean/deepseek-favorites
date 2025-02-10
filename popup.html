@@ -51,6 +51,24 @@
     <button class="add-prompt-btn" id="addPromptBtn">+ Add Prompt</button>
   </div>
 
+  <!-- Modal Window -->
+  <div id="chatModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">Chat History</div>
+        <button class="copy-btn" title="Copy chat history">
+          📋 Copy
+        </button>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="chatContent">
+          <!-- Chat content will be loaded here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html> 
