@@ -27,6 +27,7 @@
         </div>
       </div>
       <div class="header-buttons-delete">
+        <button class="theme-btn settings-btn" id="settingsBtn" title="Settings">⚙️</button>
         <button class="theme-btn clear-btn" id="clearDataBtn" title="Clear all data">🗑️</button>
       </div>
     </div>
@@ -48,7 +49,9 @@
     <div id="promptsList">
       <!-- Prompts will be here -->
     </div>
-    <button class="add-prompt-btn" id="addPromptBtn">+ Add Prompt</button>
+    <div class="add-prompt-container">
+      <button class="add-prompt-btn" id="addPromptBtn">+ Add Prompt</button>
+    </div>
   </div>
 
   <!-- Modal Window -->
@@ -64,6 +67,46 @@
       <div class="modal-body">
         <div id="chatContent">
           <!-- Chat content will be loaded here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="settings-modal">
+    <div class="settings-content">
+      <div class="settings-header">
+        <div class="settings-title">Settings</div>
+        <button class="settings-close">&times;</button>
+      </div>
+      <div class="settings-form">
+        <div class="settings-group">
+          <label for="provider">API Provider</label>
+          <select id="provider">
+            <option value="openrouter">OpenRouter</option>
+            <option value="google">Google AI</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label for="apiKey">API Key</label>
+          <input type="password" id="apiKey" placeholder="Enter your API key">
+        </div>
+        <div class="settings-group">
+          <label for="model">Model</label>
+          <div class="model-container">
+            <select id="model">
+              <!-- Options will be populated by JavaScript -->
+            </select>
+            <button type="button" class="check-connection-btn" id="checkConnectionBtn" title="Check Connection">🔄</button>
+          </div>
+        </div>
+        <div class="settings-group">
+          <label for="summaryPrompt">Summary Prompt Template</label>
+          <textarea id="summaryPrompt" placeholder="Enter prompt template for generating summaries" style="min-height: 120px;">Please generate a concise summary of this chat conversation in 2-3 sentences: {text}</textarea>
+        </div>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-secondary settings-close">Cancel</button>
+          <button type="button" class="btn btn-primary" id="saveSettings">Save</button>
         </div>
       </div>
     </div>

@@ -78,6 +78,36 @@
       transform: translateY(0);
     }
 
+    .generate-summary-btn {
+      background: none;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      cursor: pointer;
+      padding: 6px 12px;
+      margin-right: 10px;
+      color: var(--text-color);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 15px;
+      transition: all 0.2s ease;
+    }
+
+    .generate-summary-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+      transform: translateY(-1px);
+    }
+
+    .generate-summary-btn:active {
+      transform: translateY(0);
+    }
+
+    .generate-summary-btn.loading {
+      opacity: 0.7;
+      cursor: wait;
+    }
+
     .theme-toggle {
       margin-right: 10px;
       background: none;
@@ -184,14 +214,42 @@
     .chat-message a:hover {
       text-decoration: underline;
     }
+
+    .summary-container {
+      margin: 0 -16px 16px -16px;
+      padding: 16px;
+      background: var(--btn-bg);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 15px;
+      line-height: 1.5;
+      color: var(--text-color);
+      display: none;
+    }
+
+    .summary-container.has-summary {
+      display: block;
+    }
+
+    .summary-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text-color);
+    }
+
+    .summary-content {
+      color: var(--description-color);
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <div class="title">Chat History</div>
     <button class="theme-toggle" title="Toggle theme">🌓</button>
+    <button class="generate-summary-btn" title="Generate Summary">📝 Generate Summary</button>
     <button class="copy-btn" title="Copy chat history">📋 Copy</button>
   </div>
+  <div id="summaryContainer" class="summary-container"></div>
   <div id="chatContent"></div>
 
   <script src="chat-viewer.js"></script>

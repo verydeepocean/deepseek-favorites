@@ -40,6 +40,7 @@ async function loadChatContent(chatId) {
 document.addEventListener('DOMContentLoaded', async () => {
   const chatContent = document.getElementById('chatContent');
   const copyBtn = document.querySelector('.copy-btn');
+  const generateSummaryBtn = document.querySelector('.generate-summary-btn');
   const themeToggle = document.querySelector('.theme-toggle');
   const title = document.querySelector('.title');
   
@@ -47,6 +48,209 @@ document.addEventListener('DOMContentLoaded', async () => {
   const urlParams = new URLSearchParams(window.location.search);
   const timestamp = urlParams.get('id');
   
+  // Конфигурация Google API
+  const GOOGLE_API_KEY = 'YOUR_API_KEY'; // Нужно будет заменить на реальный ключ
+  const GOOGLE_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+  
+  // Функция для генерации summary
+  async function generateSummary() {
+    try {
+      // Получаем все сообщения чата
+      const chatMessages = document.querySelectorAll('.chat-message');
+      if (!chatMessages.length) {
+        throw new Error('No chat messages found');
+      }
+
+      // Собираем весь текст чата
+      const chatText = Array.from(chatMessages)
+        .map(msg => {
+          const role = msg.classList.contains('user-message') ? 'User' : 'Assistant';
+          const content = msg.querySelector('.message-content').textContent.trim();
+          return `${role}: ${content}`;
+        })
+        .join('\n\n');
+
+      // Получаем настройки
+      const settings = await new Promise(resolve => {
+        chrome.storage.sync.get(['settings'], result => {
+          resolve(result.settings || {
+            provider: 'openrouter',
+            apiKeys: { openrouter: '', google: '' },
+            model: 'openai/gpt-4-turbo-preview',
+            summaryPrompt: 'Please generate a concise summary of this chat conversation in 2-3 sentences: {text}'
+          });
+        });
+      });
+
+      if (!settings.apiKeys || !settings.apiKeys[settings.provider]) {
+        throw new Error('API key not found. Please add it in Settings.');
+      }
+
+      const apiKey = settings.apiKeys[settings.provider];
+
+      // Показываем состояние загрузки
+      const generateSummaryBtn = document.querySelector('.generate-summary-btn');
+      generateSummaryBtn.disabled = true;
+      generateSummaryBtn.classList.add('loading');
+      generateSummaryBtn.innerHTML = '⌛ Generating...';
+
+      let response;
+      let summary;
+
+      if (settings.provider === 'google') {
+        // Используем Google AI API
+        const apiVersion = 'v1beta';
+        const modelId = settings.model;
+        
+        response = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${modelId}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: settings.summaryPrompt.replace('{text}', chatText)
+              }]
+            }]
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          console.error('Google AI API error:', error);
+          throw new Error(error.error?.message || 'Failed to generate summary');
+        }
+
+        const data = await response.json();
+        console.log('Google AI API response:', data);
+
+        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+          console.error('Invalid Google AI response format:', data);
+          throw new Error('Invalid response format from Google AI');
+        }
+
+        const content = data.candidates[0].content;
+        if (!content.parts || !content.parts[0] || !content.parts[0].text) {
+          console.error('Missing text in Google AI response:', content);
+          throw new Error('No text generated from Google AI');
+        }
+
+        summary = content.parts[0].text;
+      } else {
+        // Используем OpenRouter API
+        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': 'https://github.com/your-username/deepseek-favorites',
+            'X-Title': 'DeepSeek Favorites Extension'
+          },
+          body: JSON.stringify({
+            model: settings.model,
+            messages: [
+              {
+                role: 'user',
+                content: settings.summaryPrompt.replace('{text}', chatText)
+              }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to generate summary');
+        }
+
+        const data = await response.json();
+        console.log('API Response:', data);
+
+        if (!data || !data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+          throw new Error('Invalid API response format: missing or empty choices array');
+        }
+
+        const firstChoice = data.choices[0];
+        if (!firstChoice || !firstChoice.message || !firstChoice.message.content) {
+          throw new Error('Invalid API response format: missing message content');
+        }
+
+        summary = firstChoice.message.content;
+      }
+
+      // Обновляем контейнер summary
+      const summaryContainer = document.getElementById('summaryContainer');
+      summaryContainer.innerHTML = `
+        <div class="summary-title">Summary:</div>
+        <div class="summary-content">${summary}</div>
+      `;
+      summaryContainer.classList.add('has-summary');
+
+      // Получаем timestamp из URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const timestamp = urlParams.get('id');
+
+      // Сохраняем summary в локальное хранилище и в избранное
+      await Promise.all([
+        // Сохраняем в локальное хранилище
+        new Promise(resolve => {
+          chrome.storage.local.set({
+            [`${timestamp}_summary`]: summary
+          }, resolve);
+        }),
+        // Обновляем в избранном
+        new Promise(resolve => {
+          chrome.storage.sync.get(['favorites'], (result) => {
+            const favorites = result.favorites || [];
+            const updatedFavorites = favorites.map(f => {
+              if (f.timestamp === timestamp) {
+                // Очищаем описание от возможных дубликатов
+                const descriptions = summary.split('\n').map(d => d.trim()).filter(Boolean);
+                const cleanDescription = [...new Set(descriptions)].join('\n');
+                return { ...f, description: cleanDescription };
+              }
+              return f;
+            });
+
+            chrome.storage.sync.set({ favorites: updatedFavorites }, resolve);
+          });
+        })
+      ]);
+
+      // Копируем summary в буфер обмена
+      await navigator.clipboard.writeText(summary);
+
+      // Отправляем сообщение в popup для обновления описания
+      chrome.runtime.sendMessage({
+        action: 'updateDescription',
+        timestamp: timestamp,
+        description: summary
+      });
+
+      // Обновляем описание в родительском окне, если оно существует
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({
+          action: 'updateDescription',
+          timestamp: timestamp,
+          description: summary
+        }, '*');
+      }
+
+      // Показываем уведомление об успехе
+      showNotification('Summary generated, saved as description and copied to clipboard!');
+
+    } catch (error) {
+      console.error('Error generating summary:', error);
+      showNotification(error.message || 'Failed to generate summary. Please try again.', true);
+    } finally {
+      // Возвращаем кнопку в исходное состояние
+      const generateSummaryBtn = document.querySelector('.generate-summary-btn');
+      generateSummaryBtn.disabled = false;
+      generateSummaryBtn.classList.remove('loading');
+      generateSummaryBtn.innerHTML = '📝 Generate Summary';
+    }
+  }
+
   // Функция для установки темы
   function setTheme(theme) {
     document.body.setAttribute('data-theme', theme);
@@ -97,12 +301,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Собираем и парсим содержимое
       const chatData = JSON.parse(chunks.join(''));
       
-      // Получаем заголовок чата
+      // Получаем заголовок чата и восстанавливаем summary
       chrome.storage.sync.get(['favorites'], (result) => {
         const favorite = result.favorites.find(f => f.timestamp === timestamp);
         if (favorite) {
           title.textContent = `Chat History: ${favorite.title}`;
           document.title = favorite.title;
+
+          // Восстанавливаем summary если он есть
+          if (favorite.description) {
+            const summaryContainer = document.getElementById('summaryContainer');
+            summaryContainer.innerHTML = `
+              <div class="summary-title">Summary:</div>
+              <div class="summary-content">${favorite.description}</div>
+            `;
+            summaryContainer.classList.add('has-summary');
+          }
         }
       });
       
@@ -139,13 +353,66 @@ document.addEventListener('DOMContentLoaded', async () => {
           }, 2000);
         });
       });
+
+      // Добавляем обработчик для кнопки генерации summary
+      generateSummaryBtn.addEventListener('click', generateSummary);
     } else {
       chatContent.innerHTML = '<div class="chat-container"><p>No chat history available</p></div>';
       copyBtn.style.display = 'none';
+      generateSummaryBtn.style.display = 'none';
     }
   } catch (error) {
     console.error('Error loading chat:', error);
     chatContent.innerHTML = '<div class="chat-container"><p>Error loading chat history</p></div>';
     copyBtn.style.display = 'none';
+    generateSummaryBtn.style.display = 'none';
   }
+
+  // Функция для показа уведомлений
+  function showNotification(message, isError = false) {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 12px 24px;
+      background: ${isError ? '#dc3545' : '#198754'};
+      color: white;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 1000;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s ease;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Анимация появления
+    setTimeout(() => {
+      notification.style.opacity = '1';
+      notification.style.transform = 'translateY(0)';
+    }, 100);
+    
+    // Удаление через 3 секунды
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      notification.style.transform = 'translateY(10px)';
+      setTimeout(() => notification.remove(), 300);
+    }, 3000);
+  }
+
+  // Добавляем слушатель сообщений от других окон
+  window.addEventListener('message', (event) => {
+    if (event.data.action === 'updateDescription') {
+      const editForm = document.querySelector('.edit-form');
+      if (editForm) {
+        const descriptionTextarea = editForm.querySelector('.edit-description');
+        if (descriptionTextarea) {
+          descriptionTextarea.value = event.data.description;
+        }
+      }
+    }
+  });
 }); 

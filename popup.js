@@ -11,6 +11,45 @@ function debounce(func, wait) {
   };
 }
 
+// Функция для загрузки содержимого чата
+async function loadChatContent(chatId) {
+  try {
+    // Загружаем метаданные о чанках
+    const meta = await new Promise((resolve, reject) => {
+      chrome.storage.local.get([`${chatId}_meta`], (result) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(result[`${chatId}_meta`]);
+        }
+      });
+    });
+
+    if (!meta) {
+      throw new Error('Chat content not found');
+    }
+
+    // Загружаем все чанки
+    const chunkKeys = Array.from({ length: meta.chunks }, (_, i) => `${chatId}_chunk_${i}`);
+    const chunks = await new Promise((resolve, reject) => {
+      chrome.storage.local.get(chunkKeys, (result) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(Object.values(result));
+        }
+      });
+    });
+
+    // Собираем чанки обратно в строку и парсим JSON
+    const serialized = chunks.join('');
+    return JSON.parse(serialized);
+  } catch (error) {
+    console.error('Error loading chat content:', error);
+    throw error;
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const favoritesList = document.getElementById('favoritesList');
   const editForm = document.getElementById('editForm');
@@ -36,6 +75,303 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentFavorites = [];
   let currentPrompts = [];
   
+  // Настройки по умолчанию
+  const DEFAULT_SETTINGS = {
+    provider: 'openrouter',
+    apiKeys: {
+      openrouter: '',
+      google: ''
+    },
+    model: 'anthropic/claude-3-sonnet',
+    summaryPrompt: 'Please generate a concise summary of this chat conversation in 2-3 sentences: {text}'
+  };
+
+  // Элементы настроек
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsModal = document.getElementById('settingsModal');
+  const closeButtons = settingsModal.querySelectorAll('.settings-close');
+  const saveSettingsBtn = document.getElementById('saveSettings');
+  const providerSelect = document.getElementById('provider');
+  const apiKeyInput = document.getElementById('apiKey');
+  const modelSelect = document.getElementById('model');
+  const summaryPromptInput = document.getElementById('summaryPrompt');
+
+  // Модели для каждого провайдера
+  const PROVIDER_MODELS = {
+    openrouter: [
+      { value: 'google/gemini-2.0-flash-001', label: 'gemini-2.0-flash-001' },
+      { value: 'deepseek/deepseek-chat', label: 'DeepSeek-V3' },
+      { value: 'openai/gpt-4o-mini', label: 'GPT-4o mini' },
+      { value: 'meta-llama/llama-3.3-70b-instruct', label: 'The Meta Llama 3.3' }
+    ],
+    google: [
+      { value: 'gemini-2.0-flash-001', label: 'gemini-2.0-flash-001' },
+      { value: 'gemini-2.0-flash-lite-preview-02-05', label: 'gemini-2.0-flash-lite-preview-02-05' },
+      { value: 'gemini-2.0-pro-exp-02-05', label: 'gemini-2.0-pro-exp-02-05' },
+      { value: 'gemini-2.0-flash-thinking-exp-01-21', label: 'gemini-2.0-flash-thinking-exp-01-21' },
+      { value: 'gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp' }
+    ]
+  };
+
+  // Функция для обновления списка моделей в зависимости от провайдера
+  function updateModelsList(provider) {
+    const models = PROVIDER_MODELS[provider];
+    const modelSelect = document.getElementById('model');
+    
+    // Очищаем текущий список
+    modelSelect.innerHTML = '';
+    
+    // Добавляем новые опции
+    models.forEach(model => {
+      const option = document.createElement('option');
+      option.value = model.value;
+      option.textContent = model.label;
+      modelSelect.appendChild(option);
+    });
+
+    // Устанавливаем первую модель как выбранную по умолчанию
+    if (models.length > 0) {
+      modelSelect.value = models[0].value;
+    }
+  }
+
+  // Добавляем функцию проверки соединения
+  let lastSavedSettings = null;
+
+  // Сохранение настроек
+  async function saveSettings() {
+    const currentProvider = providerSelect.value;
+    
+    // Получаем текущие настройки для сохранения всех API ключей
+    const currentSettings = await new Promise(resolve => {
+      chrome.storage.sync.get(['settings'], result => {
+        resolve(result.settings || DEFAULT_SETTINGS);
+      });
+    });
+
+    const settings = {
+      provider: currentProvider,
+      apiKeys: {
+        ...currentSettings.apiKeys,
+        [currentProvider]: apiKeyInput.value.trim()
+      },
+      model: modelSelect.value,
+      summaryPrompt: summaryPromptInput.value.trim() || DEFAULT_SETTINGS.summaryPrompt
+    };
+
+    // Проверка наличия API ключа для текущего провайдера
+    if (!settings.apiKeys[currentProvider]) {
+      showNotification('Please enter your API key', true);
+      apiKeyInput.focus();
+      return;
+    }
+
+    try {
+      await chrome.storage.sync.set({ settings });
+      lastSavedSettings = settings;
+      showNotification('Settings saved successfully! 🎉');
+      settingsModal.classList.remove('active');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      showNotification('Failed to save settings. Please try again.', true);
+    }
+  }
+
+  // Функция для показа уведомлений
+  function showNotification(message, isError = false) {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 12px 24px;
+      background: ${isError ? '#dc3545' : '#198754'};
+      color: white;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 1000;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s ease;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Анимация появления
+    setTimeout(() => {
+      notification.style.opacity = '1';
+      notification.style.transform = 'translateY(0)';
+    }, 100);
+    
+    // Удаление через 3 секунды
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      notification.style.transform = 'translateY(10px)';
+      setTimeout(() => notification.remove(), 300);
+    }, 3000);
+  }
+
+  // Обработчики событий для настроек
+  settingsBtn.addEventListener('click', () => {
+    loadSettings();
+    settingsModal.classList.add('active');
+  });
+
+  closeButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      // Восстанавливаем последние сохраненные настройки
+      if (lastSavedSettings) {
+        await chrome.storage.sync.set({ settings: lastSavedSettings });
+        loadSettings();
+      }
+      settingsModal.classList.remove('active');
+    });
+  });
+
+  settingsModal.addEventListener('click', async (e) => {
+    if (e.target === settingsModal) {
+      // Восстанавливаем последние сохраненные настройки
+      if (lastSavedSettings) {
+        await chrome.storage.sync.set({ settings: lastSavedSettings });
+        loadSettings();
+      }
+        settingsModal.classList.remove('active');
+    }
+  });
+
+  // Добавляем обработчик клавиш для формы настроек
+  settingsModal.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      await saveSettings();
+    } else if (e.key === 'Escape') {
+      // Восстанавливаем последние сохраненные настройки
+      if (lastSavedSettings) {
+        await chrome.storage.sync.set({ settings: lastSavedSettings });
+        loadSettings();
+      }
+        settingsModal.classList.remove('active');
+    }
+  });
+
+  saveSettingsBtn.addEventListener('click', saveSettings);
+
+  // Функция для генерации саммари
+  async function generateSummary(text) {
+    try {
+      const settings = await new Promise(resolve => {
+        chrome.storage.sync.get(['settings'], result => {
+          resolve(result.settings || DEFAULT_SETTINGS);
+        });
+      });
+
+      if (!settings.apiKeys[settings.provider]) {
+        throw new Error('API key not found. Please add it in Settings.');
+      }
+
+      let response;
+      let summary;
+
+      if (settings.provider === 'google') {
+        // Используем Google AI API
+        const apiVersion = settings.model === 'gemini-pro' ? 'v1' : 'v1beta';
+        const modelId = settings.model === 'gemini-pro' ? 'gemini-pro' : settings.model;
+        
+        response = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${modelId}:generateContent?key=${settings.apiKeys[settings.provider]}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: settings.summaryPrompt.replace('{text}', text)
+              }]
+            }]
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          console.error('Google AI API error:', error);
+          throw new Error(error.error?.message || 'Failed to generate summary');
+        }
+
+        const data = await response.json();
+        console.log('Google AI API response:', data);
+
+        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+          console.error('Invalid Google AI response format:', data);
+          throw new Error('Invalid response format from Google AI');
+        }
+
+        const content = data.candidates[0].content;
+        if (!content.parts || !content.parts[0] || !content.parts[0].text) {
+          console.error('Missing text in Google AI response:', content);
+          throw new Error('No text generated from Google AI');
+        }
+
+        summary = content.parts[0].text;
+      } else {
+        // Используем OpenRouter API
+        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${settings.apiKeys[settings.provider]}`,
+            'HTTP-Referer': 'https://github.com/your-username/deepseek-favorites',
+          'X-Title': 'DeepSeek Favorites Extension'
+        },
+        body: JSON.stringify({
+          model: settings.model,
+          messages: [
+            {
+              role: 'user',
+              content: settings.summaryPrompt.replace('{text}', text)
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+          console.error('OpenRouter API error:', error);
+          throw new Error(error.message || `API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+        console.log('OpenRouter API response:', data);
+
+        if (!data || !data.choices) {
+          console.error('Invalid API response format:', data);
+          throw new Error('Invalid API response format - missing choices array');
+        }
+
+        if (data.choices.length === 0) {
+          console.error('Empty choices array in response:', data);
+          throw new Error('No response generated from the model');
+        }
+
+        const firstChoice = data.choices[0];
+        if (!firstChoice || !firstChoice.message) {
+          console.error('Invalid choice format:', firstChoice);
+          throw new Error('Invalid response format - missing message');
+        }
+
+        summary = firstChoice.message.content;
+        if (!summary) {
+          console.error('Empty content in response:', firstChoice);
+          throw new Error('Empty response from the model');
+        }
+      }
+
+      return summary;
+    } catch (error) {
+      console.error('Error generating summary:', error);
+      throw new Error(`Failed to generate summary: ${error.message}`);
+    }
+  }
+
   // Функция для установки темы
   function setTheme(theme) {
     document.body.setAttribute('data-theme', theme);
@@ -911,6 +1247,2138 @@ document.addEventListener('DOMContentLoaded', () => {
       opacity: 1;
       font-weight: 600;
     }
+
+    /* Settings Modal Styles */
+    .settings-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+    }
+
+    .settings-modal.active {
+      display: block;
+    }
+
+    .settings-content {
+      position: relative;
+      background: var(--bg-color);
+      margin: 15% auto;
+      width: 90%;
+      max-width: 500px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px var(--shadow-color);
+      animation: slideDown 0.3s ease;
+      border: 1px solid var(--border-color);
+    }
+
+    .settings-header {
+      padding: 1px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .settings-title {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-color);
+      font-weight: 500;
+    }
+
+    .settings-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--btn-color);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      opacity: 0.7;
+      transition: opacity 0.2s ease;
+    }
+
+    .settings-close:hover {
+      opacity: 1;
+    }
+
+    .settings-form {
+      padding: 0 20px 20px 20px;
+    }
+
+    .settings-group {
+      margin-bottom: 0px;
+    }
+
+    .settings-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .settings-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text-color);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .settings-group select,
+    .settings-group input,
+    .settings-group textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--btn-bg);
+      color: var(--text-color);
+      font-size: 14px;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    .settings-group textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .settings-group select:focus,
+    .settings-group input:focus,
+    .settings-group textarea:focus {
+      outline: none;
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+    }
+
+    .settings-group select:hover,
+    .settings-group input:hover,
+    .settings-group textarea:hover {
+      border-color: var(--btn-hover-border);
+    }
+
+    .settings-actions {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+      position: sticky;
+      bottom: 40px;
+      background: var(--bg-color);
+      padding-bottom: 10px;
+    }
+
+    .settings-actions button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex: 1;
+      max-width: 150px;
+      min-height: 50px;
+    }
+
+    .settings-actions .btn-secondary {
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      border: 1px solid var(--btn-border);
+    }
+
+    .settings-actions .btn-secondary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .settings-actions .btn-primary {
+      background: var(--btn-bg);
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+    }
+
+    .settings-actions .btn-primary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text-color);
+      font-size: 14px;
+    }
+
+    .label-with-button {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .generate-btn {
+      padding: 2px 6px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .generate-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .generate-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      font-size: 14px;
+      background: var(--bg-color);
+      color: var(--text-color);
+      box-sizing: border-box;
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 120px;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--btn-hover-border);
+      box-shadow: 0 0 0 2px var(--hover-shadow-color);
+    }
+
+    .edit-form .button-group {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+
+    .edit-form .btn {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background: #0d6efd;
+      color: white;
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background: #0b5ed7;
+    }
+
+    .btn-secondary {
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      border: 1px solid var(--btn-border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideOut {
+      from {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      to {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+    }
+
+    .chat-item.pinned {
+      border-color: var(--btn-hover-border);
+      background: var(--btn-hover-bg);
+    }
+
+    .pin-btn {
+      padding: 4px;
+      border: none;
+      background: none;
+      color: var(--btn-color);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+      opacity: 0.7;
+    }
+
+    .pin-btn:hover {
+      background: var(--btn-hover-bg);
+      opacity: 1;
+    }
+
+    .favorite-chat[draggable="true"] {
+      cursor: move;
+    }
+
+    .favorite-chat[draggable="true"] .chat-item {
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .favorite-chat[draggable="true"]:hover .chat-item {
+      transform: translateX(4px);
+    }
+
+    .favorite-chat.dragging .chat-item {
+      opacity: 0.5;
+      transform: scale(0.98);
+    }
+
+    .pinned-container {
+      margin-bottom: 16px;
+    }
+
+    .pinned-container:empty {
+      display: none;
+    }
+
+    .unpinned-container:empty {
+      display: none;
+    }
+
+    .search-container {
+      margin-bottom: 16px;
+      padding: 0;
+    }
+
+    #searchInput {
+      width: 100%;
+      padding: 8px 12px;
+      font-size: 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--btn-bg);
+      color: var(--text-color);
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    #searchInput:focus {
+      outline: none;
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+    }
+
+    #searchInput::placeholder {
+      color: var(--description-color);
+      opacity: 0.7;
+    }
+
+    /* Стили для модального окна промптов */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+    }
+
+    .modal-content {
+      position: relative;
+      background-color: var(--btn-bg);
+      margin: 15% auto;
+      padding: 0;
+      width: 80%;
+      max-width: 500px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px var(--shadow-color);
+      animation: slideDown 0.3s ease;
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-color);
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--btn-color);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .close-btn:hover {
+      color: var(--text-color);
+    }
+
+    .modal-body {
+      padding: 20px;
+    }
+
+    .prompts-list {
+      margin-bottom: 16px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .add-prompt-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--btn-bg);
+      border: 1px dashed var(--btn-border);
+      border-radius: 4px;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .add-prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    /* Стили для промптов */
+    .prompt-item {
+      padding: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      background: var(--btn-bg);
+      transition: all 0.2s ease;
+    }
+
+    .prompt-item[draggable="true"] {
+      cursor: move;
+    }
+
+    .prompt-item[draggable="true"]:hover {
+      transform: translateX(4px);
+    }
+
+    .prompt-item.dragging {
+      opacity: 0.5;
+      transform: scale(0.98);
+    }
+
+    .pinned-container {
+      margin-bottom: 16px;
+      min-height: 8px;
+    }
+
+    .pinned-container:empty {
+      padding: 8px;
+      border: 1px dashed var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .unpinned-container:empty {
+      display: none;
+    }
+
+    .prompt-title {
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--text-color);
+      font-size: 14px;
+    }
+
+    .prompt-text {
+      font-size: 13px;
+      color: var(--description-color);
+      white-space: pre-wrap;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .prompt-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .prompt-btn {
+      padding: 4px 8px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    .prompt-btn.pin-prompt {
+      width: 32px;
+      padding: 4px;
+    }
+
+    .prompt-btn:not(.pin-prompt) {
+      min-width: 80px;
+    }
+
+    .prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .add-prompt-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--btn-bg);
+      border: 1px dashed var(--btn-border);
+      border-radius: 4px;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+      margin-top: 16px;
+    }
+
+    .add-prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    #promptsList {
+      margin-top: 16px;
+    }
+
+    .prompt-tags {
+      margin: 8px 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .prompt-tags .tag {
+      font-size: 12px;
+      color: var(--btn-color);
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .prompt-tags .tag:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .prompt-item {
+      padding: 12px;
+    }
+
+    .popular-tags {
+      margin: 8px 0 16px 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .popular-tags-label {
+      font-size: 12px;
+      color: var(--description-color);
+    }
+
+    .popular-tags-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .popular-tag {
+      font-size: 12px;
+      color: var(--btn-color);
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .popular-tag:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+      transform: translateY(-1px);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 12px;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      border: none;
+      background: none;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 500;
+      opacity: 0.7;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      opacity: 1;
+    }
+
+    .tab-btn.active {
+      color: var(--text-color);
+      opacity: 1;
+      font-weight: 600;
+    }
+
+    /* Settings Modal Styles */
+    .settings-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+    }
+
+    .settings-modal.active {
+      display: block;
+    }
+
+    .settings-content {
+      position: relative;
+      background: var(--bg-color);
+      margin: 15% auto;
+      width: 90%;
+      max-width: 500px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px var(--shadow-color);
+      animation: slideDown 0.3s ease;
+      border: 1px solid var(--border-color);
+    }
+
+    .settings-header {
+      padding: 1px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .settings-title {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-color);
+      font-weight: 500;
+    }
+
+    .settings-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--btn-color);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      opacity: 0.7;
+      transition: opacity 0.2s ease;
+    }
+
+    .settings-close:hover {
+      opacity: 1;
+    }
+
+    .settings-form {
+      padding: 0 20px 20px 20px;
+    }
+
+    .settings-group {
+      margin-bottom: 0px;
+    }
+
+    .settings-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .settings-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text-color);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .settings-group select,
+    .settings-group input,
+    .settings-group textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--btn-bg);
+      color: var(--text-color);
+      font-size: 14px;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    .settings-group textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .settings-group select:focus,
+    .settings-group input:focus,
+    .settings-group textarea:focus {
+      outline: none;
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+    }
+
+    .settings-group select:hover,
+    .settings-group input:hover,
+    .settings-group textarea:hover {
+      border-color: var(--btn-hover-border);
+    }
+
+    .settings-actions {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+      position: sticky;
+      bottom: 40px;
+      background: var(--bg-color);
+      padding-bottom: 10px;
+    }
+
+    .settings-actions button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex: 1;
+      max-width: 150px;
+      min-height: 50px;
+    }
+
+    .settings-actions .btn-secondary {
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      border: 1px solid var(--btn-border);
+    }
+
+    .settings-actions .btn-secondary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .settings-actions .btn-primary {
+      background: var(--btn-bg);
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+    }
+
+    .settings-actions .btn-primary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text-color);
+      font-size: 14px;
+    }
+
+    .label-with-button {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .generate-btn {
+      padding: 2px 6px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .generate-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .generate-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      font-size: 14px;
+      background: var(--bg-color);
+      color: var(--text-color);
+      box-sizing: border-box;
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 120px;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--btn-hover-border);
+      box-shadow: 0 0 0 2px var(--hover-shadow-color);
+    }
+
+    .edit-form .button-group {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+
+    .edit-form .btn {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background: #0d6efd;
+      color: white;
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background: #0b5ed7;
+    }
+
+    .btn-secondary {
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      border: 1px solid var(--btn-border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideOut {
+      from {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      to {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+    }
+
+    .chat-item.pinned {
+      border-color: var(--btn-hover-border);
+      background: var(--btn-hover-bg);
+    }
+
+    .pin-btn {
+      padding: 4px;
+      border: none;
+      background: none;
+      color: var(--btn-color);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+      opacity: 0.7;
+    }
+
+    .pin-btn:hover {
+      background: var(--btn-hover-bg);
+      opacity: 1;
+    }
+
+    .favorite-chat[draggable="true"] {
+      cursor: move;
+    }
+
+    .favorite-chat[draggable="true"] .chat-item {
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .favorite-chat[draggable="true"]:hover .chat-item {
+      transform: translateX(4px);
+    }
+
+    .favorite-chat.dragging .chat-item {
+      opacity: 0.5;
+      transform: scale(0.98);
+    }
+
+    .pinned-container {
+      margin-bottom: 16px;
+    }
+
+    .pinned-container:empty {
+      display: none;
+    }
+
+    .unpinned-container:empty {
+      display: none;
+    }
+
+    .search-container {
+      margin-bottom: 16px;
+      padding: 0;
+    }
+
+    #searchInput {
+      width: 100%;
+      padding: 8px 12px;
+      font-size: 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--btn-bg);
+      color: var(--text-color);
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    #searchInput:focus {
+      outline: none;
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+    }
+
+    #searchInput::placeholder {
+      color: var(--description-color);
+      opacity: 0.7;
+    }
+
+    /* Стили для модального окна промптов */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+    }
+
+    .modal-content {
+      position: relative;
+      background-color: var(--btn-bg);
+      margin: 15% auto;
+      padding: 0;
+      width: 80%;
+      max-width: 500px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px var(--shadow-color);
+      animation: slideDown 0.3s ease;
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-color);
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--btn-color);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .close-btn:hover {
+      color: var(--text-color);
+    }
+
+    .modal-body {
+      padding: 20px;
+    }
+
+    .prompts-list {
+      margin-bottom: 16px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .add-prompt-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--btn-bg);
+      border: 1px dashed var(--btn-border);
+      border-radius: 4px;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .add-prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    /* Стили для промптов */
+    .prompt-item {
+      padding: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      background: var(--btn-bg);
+      transition: all 0.2s ease;
+    }
+
+    .prompt-item[draggable="true"] {
+      cursor: move;
+    }
+
+    .prompt-item[draggable="true"]:hover {
+      transform: translateX(4px);
+    }
+
+    .prompt-item.dragging {
+      opacity: 0.5;
+      transform: scale(0.98);
+    }
+
+    .pinned-container {
+      margin-bottom: 16px;
+      min-height: 8px;
+    }
+
+    .pinned-container:empty {
+      padding: 8px;
+      border: 1px dashed var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .unpinned-container:empty {
+      display: none;
+    }
+
+    .prompt-title {
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--text-color);
+      font-size: 14px;
+    }
+
+    .prompt-text {
+      font-size: 13px;
+      color: var(--description-color);
+      white-space: pre-wrap;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .prompt-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .prompt-btn {
+      padding: 4px 8px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    .prompt-btn.pin-prompt {
+      width: 32px;
+      padding: 4px;
+    }
+
+    .prompt-btn:not(.pin-prompt) {
+      min-width: 80px;
+    }
+
+    .prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .add-prompt-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--btn-bg);
+      border: 1px dashed var(--btn-border);
+      border-radius: 4px;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+      margin-top: 16px;
+    }
+
+    .add-prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    #promptsList {
+      margin-top: 16px;
+    }
+
+    .prompt-tags {
+      margin: 8px 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .prompt-tags .tag {
+      font-size: 12px;
+      color: var(--btn-color);
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .prompt-tags .tag:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .prompt-item {
+      padding: 12px;
+    }
+
+    .popular-tags {
+      margin: 8px 0 16px 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .popular-tags-label {
+      font-size: 12px;
+      color: var(--description-color);
+    }
+
+    .popular-tags-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .popular-tag {
+      font-size: 12px;
+      color: var(--btn-color);
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .popular-tag:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+      transform: translateY(-1px);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 12px;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      border: none;
+      background: none;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 500;
+      opacity: 0.7;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      opacity: 1;
+    }
+
+    .tab-btn.active {
+      color: var(--text-color);
+      opacity: 1;
+      font-weight: 600;
+    }
+
+    /* Settings Modal Styles */
+    .settings-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+    }
+
+    .settings-modal.active {
+      display: block;
+    }
+
+    .settings-content {
+      position: relative;
+      background: var(--bg-color);
+      margin: 15% auto;
+      width: 90%;
+      max-width: 500px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px var(--shadow-color);
+      animation: slideDown 0.3s ease;
+      border: 1px solid var(--border-color);
+    }
+
+    .settings-header {
+      padding: 1px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .settings-title {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-color);
+      font-weight: 500;
+    }
+
+    .settings-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--btn-color);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      opacity: 0.7;
+      transition: opacity 0.2s ease;
+    }
+
+    .settings-close:hover {
+      opacity: 1;
+    }
+
+    .settings-form {
+      padding: 0 20px 20px 20px;
+    }
+
+    .settings-group {
+      margin-bottom: 0px;
+    }
+
+    .settings-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .settings-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text-color);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .settings-group select,
+    .settings-group input,
+    .settings-group textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--btn-bg);
+      color: var(--text-color);
+      font-size: 14px;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    .settings-group textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .settings-group select:focus,
+    .settings-group input:focus,
+    .settings-group textarea:focus {
+      outline: none;
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+    }
+
+    .settings-group select:hover,
+    .settings-group input:hover,
+    .settings-group textarea:hover {
+      border-color: var(--btn-hover-border);
+    }
+
+    .settings-actions {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+      position: sticky;
+      bottom: 40px;
+      background: var(--bg-color);
+      padding-bottom: 10px;
+    }
+
+    .settings-actions button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex: 1;
+      max-width: 150px;
+      min-height: 50px;
+    }
+
+    .settings-actions .btn-secondary {
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      border: 1px solid var(--btn-border);
+    }
+
+    .settings-actions .btn-secondary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .settings-actions .btn-primary {
+      background: var(--btn-bg);
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+    }
+
+    .settings-actions .btn-primary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text-color);
+      font-size: 14px;
+    }
+
+    .label-with-button {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .generate-btn {
+      padding: 2px 6px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .generate-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .generate-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      font-size: 14px;
+      background: var(--bg-color);
+      color: var(--text-color);
+      box-sizing: border-box;
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 120px;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--btn-hover-border);
+      box-shadow: 0 0 0 2px var(--hover-shadow-color);
+    }
+
+    .edit-form .button-group {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+
+    .edit-form .btn {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background: #0d6efd;
+      color: white;
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background: #0b5ed7;
+    }
+
+    .btn-secondary {
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      border: 1px solid var(--btn-border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideOut {
+      from {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      to {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+    }
+
+    .chat-item.pinned {
+      border-color: var(--btn-hover-border);
+      background: var(--btn-hover-bg);
+    }
+
+    .pin-btn {
+      padding: 4px;
+      border: none;
+      background: none;
+      color: var(--btn-color);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+      opacity: 0.7;
+    }
+
+    .pin-btn:hover {
+      background: var(--btn-hover-bg);
+      opacity: 1;
+    }
+
+    .favorite-chat[draggable="true"] {
+      cursor: move;
+    }
+
+    .favorite-chat[draggable="true"] .chat-item {
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .favorite-chat[draggable="true"]:hover .chat-item {
+      transform: translateX(4px);
+    }
+
+    .favorite-chat.dragging .chat-item {
+      opacity: 0.5;
+      transform: scale(0.98);
+    }
+
+    .pinned-container {
+      margin-bottom: 16px;
+    }
+
+    .pinned-container:empty {
+      display: none;
+    }
+
+    .unpinned-container:empty {
+      display: none;
+    }
+
+    .search-container {
+      margin-bottom: 16px;
+      padding: 0;
+    }
+
+    #searchInput {
+      width: 100%;
+      padding: 8px 12px;
+      font-size: 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--btn-bg);
+      color: var(--text-color);
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    #searchInput:focus {
+      outline: none;
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+    }
+
+    #searchInput::placeholder {
+      color: var(--description-color);
+      opacity: 0.7;
+    }
+
+    /* Стили для модального окна промптов */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+    }
+
+    .modal-content {
+      position: relative;
+      background-color: var(--btn-bg);
+      margin: 15% auto;
+      padding: 0;
+      width: 80%;
+      max-width: 500px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px var(--shadow-color);
+      animation: slideDown 0.3s ease;
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-color);
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--btn-color);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .close-btn:hover {
+      color: var(--text-color);
+    }
+
+    .modal-body {
+      padding: 20px;
+    }
+
+    .prompts-list {
+      margin-bottom: 16px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .add-prompt-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--btn-bg);
+      border: 1px dashed var(--btn-border);
+      border-radius: 4px;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .add-prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    /* Стили для промптов */
+    .prompt-item {
+      padding: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      background: var(--btn-bg);
+      transition: all 0.2s ease;
+    }
+
+    .prompt-item[draggable="true"] {
+      cursor: move;
+    }
+
+    .prompt-item[draggable="true"]:hover {
+      transform: translateX(4px);
+    }
+
+    .prompt-item.dragging {
+      opacity: 0.5;
+      transform: scale(0.98);
+    }
+
+    .pinned-container {
+      margin-bottom: 16px;
+      min-height: 8px;
+    }
+
+    .pinned-container:empty {
+      padding: 8px;
+      border: 1px dashed var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .unpinned-container:empty {
+      display: none;
+    }
+
+    .prompt-title {
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--text-color);
+      font-size: 14px;
+    }
+
+    .prompt-text {
+      font-size: 13px;
+      color: var(--description-color);
+      white-space: pre-wrap;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .prompt-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .prompt-btn {
+      padding: 4px 8px;
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    .prompt-btn.pin-prompt {
+      width: 32px;
+      padding: 4px;
+    }
+
+    .prompt-btn:not(.pin-prompt) {
+      min-width: 80px;
+    }
+
+    .prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .add-prompt-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--btn-bg);
+      border: 1px dashed var(--btn-border);
+      border-radius: 4px;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+      margin-top: 16px;
+    }
+
+    .add-prompt-btn:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    #promptsList {
+      margin-top: 16px;
+    }
+
+    .prompt-tags {
+      margin: 8px 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .prompt-tags .tag {
+      font-size: 12px;
+      color: var(--btn-color);
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .prompt-tags .tag:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .prompt-item {
+      padding: 12px;
+    }
+
+    .popular-tags {
+      margin: 8px 0 16px 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .popular-tags-label {
+      font-size: 12px;
+      color: var(--description-color);
+    }
+
+    .popular-tags-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .popular-tag {
+      font-size: 12px;
+      color: var(--btn-color);
+      background: var(--btn-bg);
+      border: 1px solid var(--btn-border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .popular-tag:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+      transform: translateY(-1px);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 12px;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      border: none;
+      background: none;
+      color: var(--btn-color);
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 500;
+      opacity: 0.7;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      opacity: 1;
+    }
+
+    .tab-btn.active {
+      color: var(--text-color);
+      opacity: 1;
+      font-weight: 600;
+    }
+
+    /* Settings Modal Styles */
+    .settings-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+    }
+
+    .settings-modal.active {
+      display: block;
+    }
+
+    .settings-content {
+      position: relative;
+      background: var(--bg-color);
+      margin: 15% auto;
+      width: 90%;
+      max-width: 500px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px var(--shadow-color);
+      animation: slideDown 0.3s ease;
+      border: 1px solid var(--border-color);
+    }
+
+    .settings-header {
+      padding: 1px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .settings-title {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text-color);
+      font-weight: 500;
+    }
+
+    .settings-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--btn-color);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      opacity: 0.7;
+      transition: opacity 0.2s ease;
+    }
+
+    .settings-close:hover {
+      opacity: 1;
+    }
+
+    .settings-form {
+      padding: 0 20px 20px 20px;
+    }
+
+    .settings-group {
+      margin-bottom: 0px;
+    }
+
+    .settings-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .settings-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text-color);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .settings-group select,
+    .settings-group input,
+    .settings-group textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: var(--btn-bg);
+      color: var(--text-color);
+      font-size: 14px;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    .settings-group textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .settings-group select:focus,
+    .settings-group input:focus,
+    .settings-group textarea:focus {
+      outline: none;
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+    }
+
+    .settings-group select:hover,
+    .settings-group input:hover,
+    .settings-group textarea:hover {
+      border-color: var(--btn-hover-border);
+    }
+
+    .settings-actions {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+      position: sticky;
+      bottom: 40px;
+      background: var(--bg-color);
+      padding-bottom: 10px;
+    }
+
+    .settings-actions button {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex: 1;
+      max-width: 150px;
+      min-height: 50px;
+    }
+
+    .settings-actions .btn-secondary {
+      background: var(--btn-bg);
+      color: var(--btn-color);
+      border: 1px solid var(--btn-border);
+    }
+
+    .settings-actions .btn-secondary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    .settings-actions .btn-primary {
+      background: var(--btn-bg);
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+    }
+
+    .settings-actions .btn-primary:hover {
+      background: var(--btn-hover-bg);
+      border-color: var(--btn-hover-border);
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
   `;
   document.head.appendChild(globalStyle);
   
@@ -926,7 +3394,10 @@ document.addEventListener('DOMContentLoaded', () => {
     form.className = 'edit-form';
     form.innerHTML = `
       <div class="form-group">
+        <div class="label-with-button">
         <label for="editTitle_${favorite.timestamp}">Title</label>
+          <button type="button" class="generate-btn generate-title-btn" title="Generate Title with AI">📝</button>
+        </div>
         <input type="text" id="editTitle_${favorite.timestamp}" class="edit-title" placeholder="Enter title" value="${favorite.title || ''}">
       </div>
       <div class="form-group">
@@ -934,8 +3405,11 @@ document.addEventListener('DOMContentLoaded', () => {
         <input type="text" id="editTags_${favorite.timestamp}" class="edit-tags" placeholder="Add space-separated tags" value="${(favorite.tags || []).join(' ')}">
       </div>
       <div class="form-group">
+        <div class="label-with-button">
         <label for="editDescription_${favorite.timestamp}">Description</label>
-        <textarea id="editDescription_${favorite.timestamp}" class="edit-description" placeholder="Add chat description">${favorite.description || ''}</textarea>
+          <button type="button" class="generate-btn" title="Generate Summary with AI">📝</button>
+        </div>
+          <textarea id="editDescription_${favorite.timestamp}" class="edit-description" placeholder="Add chat description">${favorite.description || ''}</textarea>
       </div>
       <div class="button-group">
         <button type="button" class="btn btn-secondary cancel-edit" data-action="cancel">Cancel</button>
@@ -946,20 +3420,299 @@ document.addEventListener('DOMContentLoaded', () => {
     // Находим кнопки и поля ввода
     const saveButton = form.querySelector('[data-action="save"]');
     const cancelButton = form.querySelector('[data-action="cancel"]');
+    const generateDescButton = form.querySelector('.generate-btn:not(.generate-title-btn)');
+    const generateTitleButton = form.querySelector('.generate-title-btn');
     const titleInput = form.querySelector('.edit-title');
     const tagsInput = form.querySelector('.edit-tags');
     const descriptionInput = form.querySelector('.edit-description');
 
-    if (!saveButton || !cancelButton || !titleInput || !tagsInput || !descriptionInput) {
-      console.error('Required form elements not found:', {
-        saveButton,
-        cancelButton,
-        titleInput,
-        tagsInput,
-        descriptionInput
-      });
-      return null;
-    }
+    // Добавляем обработчик для кнопки генерации названия
+    generateTitleButton.addEventListener('click', async () => {
+      try {
+        // Показываем состояние загрузки
+        generateTitleButton.disabled = true;
+        generateTitleButton.style.opacity = '0.7';
+        generateTitleButton.textContent = '⌛';
+
+        // Загружаем содержимое чата
+        const chatData = await loadChatContent(favorite.timestamp);
+        
+        // Формируем текст для генерации названия
+        const chatText = chatData.map(message => {
+          const role = message.type === 'question' ? 'User' : 'Assistant';
+          return `${role}: ${message.content}`;
+        }).join('\n\n');
+
+        // Получаем настройки
+        const settings = await new Promise(resolve => {
+          chrome.storage.sync.get(['settings'], result => {
+            resolve(result.settings || DEFAULT_SETTINGS);
+          });
+        });
+
+        if (!settings.apiKeys[settings.provider]) {
+          throw new Error('API key not found. Please add it in Settings.');
+        }
+
+        let response;
+        let title;
+
+        if (settings.provider === 'google') {
+          // Используем Google AI API
+          const apiVersion = settings.model === 'gemini-pro' ? 'v1' : 'v1beta';
+          const modelId = settings.model === 'gemini-pro' ? 'gemini-pro' : settings.model;
+          
+          response = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${modelId}:generateContent?key=${settings.apiKeys[settings.provider]}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{
+                  text: `Come up with a name for this chat up to 50 characters. Short, clear and concise. Capture only the essence. The language of the name should match the language of the chat. Return only the name without quotes: ${chatText}`
+                }]
+              }]
+            })
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Google AI API error:', error);
+            throw new Error(error.error?.message || 'Failed to generate title');
+          }
+
+          const data = await response.json();
+          console.log('Google AI API response:', data);
+
+          if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+            console.error('Invalid Google AI response format:', data);
+            throw new Error('Invalid response format from Google AI');
+          }
+
+          const content = data.candidates[0].content;
+          if (!content.parts || !content.parts[0] || !content.parts[0].text) {
+            console.error('Missing text in Google AI response:', content);
+            throw new Error('No text generated from Google AI');
+          }
+
+          title = content.parts[0].text;
+        } else {
+          // Используем OpenRouter API
+          response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${settings.apiKeys[settings.provider]}`,
+            'HTTP-Referer': 'https://github.com/your-username/deepseek-favorites',
+            'X-Title': 'DeepSeek Favorites Extension'
+          },
+          body: JSON.stringify({
+            model: settings.model,
+            messages: [
+              {
+                role: 'user',
+                  content: `Come up with a name for this chat up to 50 characters. Short, clear and concise. Capture only the essence. The language of the name should match the language of the chat. Return only the name without quotes: ${chatText}`
+              }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+            console.error('OpenRouter API error:', error);
+            throw new Error(error.message || `API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+          console.log('OpenRouter API response:', data);
+
+          if (!data || !data.choices) {
+            console.error('Invalid API response format:', data);
+            throw new Error('Invalid API response format - missing choices array');
+          }
+
+          if (data.choices.length === 0) {
+            console.error('Empty choices array in response:', data);
+            throw new Error('No response generated from the model');
+          }
+
+          const firstChoice = data.choices[0];
+          if (!firstChoice || !firstChoice.message) {
+            console.error('Invalid choice format:', firstChoice);
+            throw new Error('Invalid response format - missing message');
+          }
+
+          title = firstChoice.message.content;
+          if (!title) {
+            console.error('Empty content in response:', firstChoice);
+            throw new Error('Empty response from the model');
+          }
+        }
+
+        // Обновляем поле названия
+        titleInput.value = title;
+
+        // Копируем название в буфер обмена
+        await navigator.clipboard.writeText(title);
+
+        // Показываем уведомление об успехе
+        showNotification('Title generated and copied to clipboard!');
+
+      } catch (error) {
+        console.error('Error generating title:', error);
+        showNotification(error.message || 'Failed to generate title. Please try again.', true);
+      } finally {
+        // Возвращаем кнопку в исходное состояние
+        generateTitleButton.disabled = false;
+        generateTitleButton.style.opacity = '1';
+        generateTitleButton.textContent = '📝';
+      }
+    });
+
+    // Добавляем обработчик для кнопки генерации summary
+    generateDescButton.addEventListener('click', async () => {
+      try {
+        // Показываем состояние загрузки
+        generateDescButton.disabled = true;
+        generateDescButton.style.opacity = '0.7';
+        generateDescButton.textContent = '⌛ Generating...';
+
+        // Загружаем содержимое чата
+        const chatData = await loadChatContent(favorite.timestamp);
+        
+        // Формируем текст для генерации summary
+        const chatText = chatData.map(message => {
+          const role = message.type === 'question' ? 'User' : 'Assistant';
+          return `${role}: ${message.content}`;
+        }).join('\n\n');
+
+        // Получаем настройки
+        const settings = await new Promise(resolve => {
+          chrome.storage.sync.get(['settings'], result => {
+            resolve(result.settings || DEFAULT_SETTINGS);
+          });
+        });
+
+        if (!settings.apiKeys[settings.provider]) {
+          throw new Error('API key not found. Please add it in Settings.');
+        }
+
+        let response;
+        let summary;
+
+        if (settings.provider === 'google') {
+          // Используем Google AI API
+          const apiVersion = settings.model === 'gemini-pro' ? 'v1' : 'v1beta';
+          const modelId = settings.model === 'gemini-pro' ? 'gemini-pro' : settings.model;
+          
+          response = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${modelId}:generateContent?key=${settings.apiKeys[settings.provider]}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{
+                  text: settings.summaryPrompt.replace('{text}', chatText)
+                }]
+              }]
+            })
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Google AI API error:', error);
+            throw new Error(error.error?.message || 'Failed to generate summary');
+          }
+
+          const data = await response.json();
+          console.log('Google AI API response:', data);
+
+          if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+            console.error('Invalid Google AI response format:', data);
+            throw new Error('Invalid response format from Google AI');
+          }
+
+          const content = data.candidates[0].content;
+          if (!content.parts || !content.parts[0] || !content.parts[0].text) {
+            console.error('Missing text in Google AI response:', content);
+            throw new Error('No text generated from Google AI');
+          }
+
+          summary = content.parts[0].text;
+        } else {
+          // Используем OpenRouter API
+          response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${settings.apiKeys[settings.provider]}`,
+            'HTTP-Referer': 'https://github.com/your-username/deepseek-favorites',
+            'X-Title': 'DeepSeek Favorites Extension'
+          },
+          body: JSON.stringify({
+            model: settings.model,
+            messages: [
+              {
+                role: 'user',
+                content: settings.summaryPrompt.replace('{text}', chatText)
+              }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+            console.error('OpenRouter API error:', error);
+            throw new Error(error.message || `API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+          console.log('OpenRouter API response:', data);
+
+          if (!data || !data.choices) {
+            console.error('Invalid API response format:', data);
+            throw new Error('Invalid API response format - missing choices array');
+          }
+
+          if (data.choices.length === 0) {
+            console.error('Empty choices array in response:', data);
+            throw new Error('No response generated from the model');
+          }
+
+          const firstChoice = data.choices[0];
+          if (!firstChoice || !firstChoice.message) {
+            console.error('Invalid choice format:', firstChoice);
+            throw new Error('Invalid response format - missing message');
+          }
+
+          summary = firstChoice.message.content;
+          if (!summary) {
+            console.error('Empty content in response:', firstChoice);
+            throw new Error('Empty response from the model');
+          }
+        }
+
+        // Обновляем поле описания
+        descriptionInput.value = summary;
+
+        // Копируем summary в буфер обмена
+        await navigator.clipboard.writeText(summary);
+
+        // Показываем уведомление об успехе
+        showNotification('Summary generated and copied to clipboard!');
+
+      } catch (error) {
+        console.error('Error generating summary:', error);
+        showNotification(error.message || 'Failed to generate summary. Please try again.', true);
+      } finally {
+        // Возвращаем кнопку в исходное состояние
+        generateDescButton.disabled = false;
+        generateDescButton.style.opacity = '1';
+        generateDescButton.textContent = '📝 Generate';
+      }
+    });
 
     // Функция сохранения
     function handleSave() {
@@ -1181,16 +3934,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Обработка клика по кнопке удаления
     if (deleteBtn) {
       console.log('Delete button clicked for favorite:', favorite);
-      if (confirm('Are you sure you want to delete this chat from favorites?')) {
-        chatElement.style.animation = 'slideOut 0.3s ease forwards';
-        setTimeout(() => {
-          const newFavorites = currentFavorites.filter(f => f.timestamp !== timestamp);
+      const newFavorites = currentFavorites.filter(f => f.timestamp !== favorite.timestamp);
           chrome.storage.sync.set({ favorites: newFavorites }, () => {
             currentFavorites = newFavorites;
             filterFavorites(searchInput.value);
           });
-        }, 300);
-      }
     }
   });
 
@@ -1201,6 +3949,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
+    // Очищаем список перед обновлением
     favoritesList.innerHTML = '';
     
     // Обновляем популярные теги для избранного
@@ -1262,6 +4011,15 @@ document.addEventListener('DOMContentLoaded', () => {
       
       return truncated + '...';
     }
+
+    // Функция для проверки и очистки описания
+    function sanitizeDescription(desc) {
+      if (!desc) return '';
+      // Разделяем на строки и удаляем пустые
+      const descriptions = desc.split('\n').map(d => d.trim()).filter(Boolean);
+      // Возвращаем только уникальные описания
+      return [...new Set(descriptions)].join('\n');
+    }
     
     sortedFavorites.forEach(favorite => {
       const chatElement = document.createElement('div');
@@ -1280,14 +4038,16 @@ document.addEventListener('DOMContentLoaded', () => {
         minute: '2-digit'
       });
       
-      // Обрезаем описание до 120 символов
-      const truncatedDescription = favorite.description ? truncateText(favorite.description, 120) : '';
+      // Очищаем и обрезаем описание только для title атрибута
+      const description = sanitizeDescription(favorite.description);
+      const truncatedDescription = description ? truncateText(description, 150) : '';
+      const tooltipText = description ? renderHTML(description) : ''; // Получаем чистый текст для тултипа
       
       chatElement.innerHTML = `
         <div class="chat-item ${favorite.pinned ? 'pinned' : ''}">
           <div class="chat-header">
             <a href="${favorite.url}" target="_blank" class="chat-title">
-              ${favorite.pinned ? '📌 ' : ''}${favorite.title || 'Untitled'}
+              ${favorite.pinned ? '📌 ' : ''}${escapeHtml(favorite.title || 'Untitled')}
             </a>
             <div class="button-group">
               <button type="button" class="pin-btn" title="${favorite.pinned ? 'Unpin' : 'Pin'}">${favorite.pinned ? '📌' : '📍'}</button>
@@ -1296,9 +4056,9 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
           </div>
           <div class="chat-time">${chatTime}</div>
-          ${truncatedDescription ? `<div class="description" title="${favorite.description}">${truncatedDescription}</div>` : ''}
+          ${description ? `<div class="description" title="${escapeHtml(tooltipText)}">${truncatedDescription}</div>` : ''}
           ${favorite.tags && favorite.tags.length > 0 ? 
-            `<div class="prompt-tags">${favorite.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
+            `<div class="prompt-tags">${favorite.tags.map(tag => `<span class="tag">#${escapeHtml(tag)}</span>`).join(' ')}</div>` 
             : ''}
           <button type="button" class="chat-btn" title="View Chat History">💬 Chat</button>
         </div>
@@ -1348,13 +4108,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Обработчик для кнопки Delete
       deleteBtn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to delete this chat from favorites?')) {
           const newFavorites = currentFavorites.filter(f => f.timestamp !== favorite.timestamp);
           chrome.storage.sync.set({ favorites: newFavorites }, () => {
             currentFavorites = newFavorites;
             filterFavorites(searchInput.value);
           });
-        }
       });
 
       // Обработчики для drag and drop
@@ -1404,11 +4162,40 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Функция для экспорта в .json файл
-  function exportToJson(favorites, prompts) {
+  async function exportToJson(favorites, prompts, settings) {
+    // Получаем содержимое чатов из local storage
+    const chatContents = {};
+    for (const favorite of favorites) {
+      try {
+        const meta = await new Promise((resolve) => {
+          chrome.storage.local.get([`${favorite.timestamp}_meta`], (result) => {
+            resolve(result[`${favorite.timestamp}_meta`]);
+          });
+        });
+
+        if (meta) {
+          const chunkKeys = Array.from({ length: meta.chunks }, (_, i) => `${favorite.timestamp}_chunk_${i}`);
+          const chunks = await new Promise((resolve) => {
+            chrome.storage.local.get(chunkKeys, (result) => {
+              resolve(Object.values(result));
+            });
+          });
+          
+          chatContents[favorite.timestamp] = {
+            meta,
+            content: chunks.join('')
+          };
+        }
+      } catch (error) {
+        console.error(`Error exporting chat content for ${favorite.timestamp}:`, error);
+      }
+    }
+
     const exportData = {
       version: "1.0",
       exportDate: new Date().toISOString(),
       theme: document.body.getAttribute('data-theme') || 'light',
+      settings: settings || DEFAULT_SETTINGS,
       favorites: favorites.map(favorite => ({
         title: favorite.title || 'Untitled',
         url: favorite.url,
@@ -1416,7 +4203,8 @@ document.addEventListener('DOMContentLoaded', () => {
         description: favorite.description || '',
         pinned: favorite.pinned || false,
         pinnedOrder: favorite.pinnedOrder,
-        tags: favorite.tags || []
+        tags: favorite.tags || [],
+        chatContent: chatContents[favorite.timestamp] || null
       })),
       prompts: prompts.map(prompt => ({
         id: prompt.id,
@@ -1440,6 +4228,16 @@ document.addEventListener('DOMContentLoaded', () => {
     URL.revokeObjectURL(url);
   }
 
+  // Обработчик экспорта
+  exportBtn.addEventListener('click', () => {
+    chrome.storage.sync.get(['favorites', 'prompts', 'settings'], (result) => {
+      const favorites = result.favorites || [];
+      const prompts = result.prompts || [];
+      const settings = result.settings || DEFAULT_SETTINGS;
+      exportToJson(favorites, prompts, settings);
+    });
+  });
+
   // Функция для импорта из .json файла
   function importFromJson(content) {
     try {
@@ -1452,20 +4250,31 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Валидируем и нормализуем избранное
       let validatedFavorites = [];
+      let chatContents = [];
       if (importData.favorites && Array.isArray(importData.favorites)) {
         validatedFavorites = importData.favorites.map(favorite => {
           if (!favorite.url) {
             throw new Error('Invalid favorite: missing URL');
           }
           
+          // Сохраняем содержимое чата для последующего импорта
+          if (favorite.chatContent) {
+            chatContents.push({
+              timestamp: favorite.timestamp,
+              content: favorite.chatContent
+            });
+          }
+          
+          // Удаляем chatContent из объекта избранного
+          const { chatContent, ...favoriteData } = favorite;
           return {
-            title: favorite.title || 'Untitled',
-            url: favorite.url,
-            timestamp: favorite.timestamp || new Date().toISOString(),
-            description: favorite.description || '',
-            pinned: Boolean(favorite.pinned),
-            pinnedOrder: favorite.pinnedOrder,
-            tags: favorite.tags || []
+            title: favoriteData.title || 'Untitled',
+            url: favoriteData.url,
+            timestamp: favoriteData.timestamp || new Date().toISOString(),
+            description: favoriteData.description || '',
+            pinned: Boolean(favoriteData.pinned),
+            pinnedOrder: favoriteData.pinnedOrder,
+            tags: favoriteData.tags || []
           };
         });
       }
@@ -1489,27 +4298,37 @@ document.addEventListener('DOMContentLoaded', () => {
           };
         });
       }
+
+      // Проверяем и нормализуем настройки
+      const validatedSettings = importData.settings ? {
+        provider: importData.settings.provider || DEFAULT_SETTINGS.provider,
+        apiKeys: {
+          ...DEFAULT_SETTINGS.apiKeys,
+          ...importData.settings.apiKeys
+        },
+        model: importData.settings.model || DEFAULT_SETTINGS.model,
+        summaryPrompt: importData.settings.summaryPrompt || DEFAULT_SETTINGS.summaryPrompt
+      } : DEFAULT_SETTINGS;
       
       return {
         theme: importData.theme || 'light',
+        settings: validatedSettings,
         favorites: validatedFavorites,
-        prompts: validatedPrompts
+        prompts: validatedPrompts,
+        chatContents: chatContents
       };
     } catch (error) {
       console.error('Error parsing import file:', error);
       alert('Ошибка при импорте файла. Убедитесь, что файл имеет правильный формат JSON.');
-      return { theme: 'light', favorites: [], prompts: [] };
+      return { 
+        theme: 'light', 
+        settings: DEFAULT_SETTINGS, 
+        favorites: [], 
+        prompts: [],
+        chatContents: []
+      };
     }
   }
-
-  // Обработчик экспорта
-  exportBtn.addEventListener('click', () => {
-    chrome.storage.sync.get(['favorites', 'prompts'], (result) => {
-      const favorites = result.favorites || [];
-      const prompts = result.prompts || [];
-      exportToJson(favorites, prompts);
-    });
-  });
 
   // Обработчик импорта
   importFile.addEventListener('change', (event) => {
@@ -1517,7 +4336,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const content = e.target.result;
         const imported = importFromJson(content);
@@ -1525,7 +4344,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (imported.favorites.length === 0 && imported.prompts.length === 0) return;
 
         // Получаем текущие данные
-        chrome.storage.sync.get(['favorites', 'prompts'], (result) => {
+        chrome.storage.sync.get(['favorites', 'prompts'], async (result) => {
           const existingFavorites = result.favorites || [];
           const existingPrompts = result.prompts || [];
 
@@ -1541,11 +4360,51 @@ document.addEventListener('DOMContentLoaded', () => {
           const updatedFavorites = [...existingFavorites, ...newFavorites];
           const updatedPrompts = [...existingPrompts, ...newPrompts];
 
-          // Сохраняем обновленные данные и тему
+          // Импортируем содержимое чатов в local storage
+          for (const chatContent of imported.chatContents) {
+            if (chatContent.content && chatContent.content.meta && chatContent.content.content) {
+              try {
+                // Сохраняем метаданные
+                await new Promise((resolve, reject) => {
+                  chrome.storage.local.set({
+                    [`${chatContent.timestamp}_meta`]: chatContent.content.meta
+                  }, () => {
+                    if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+                    else resolve();
+                  });
+                });
+
+                // Разбиваем содержимое на чанки и сохраняем
+                const content = chatContent.content.content;
+                const chunkSize = 8000; // Размер чанка
+                const chunks = [];
+                
+                for (let i = 0; i < content.length; i += chunkSize) {
+                  chunks.push(content.slice(i, i + chunkSize));
+                }
+
+                await Promise.all(chunks.map((chunk, index) => {
+                  return new Promise((resolve, reject) => {
+                    chrome.storage.local.set({
+                      [`${chatContent.timestamp}_chunk_${index}`]: chunk
+                    }, () => {
+                      if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+                      else resolve();
+                    });
+                  });
+                }));
+              } catch (error) {
+                console.error(`Error importing chat content for ${chatContent.timestamp}:`, error);
+              }
+            }
+          }
+
+          // Сохраняем обновленные данные, тему и настройки
           chrome.storage.sync.set({ 
             favorites: updatedFavorites,
             prompts: updatedPrompts,
-            theme: imported.theme 
+            theme: imported.theme,
+            settings: imported.settings
           }, () => {
             // Очищаем поля поиска
             searchInput.value = '';
@@ -1557,6 +4416,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Обновляем тему
             setTheme(imported.theme);
+
+            // Обновляем настройки в форме настроек
+            loadSettings();
             
             // Обновляем отображение
             renderFavorites(currentFavorites);
@@ -1570,9 +4432,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (newPrompts.length > 0) {
               message.push(`${newPrompts.length} new prompts`);
             }
+            if (imported.chatContents.length > 0) {
+              message.push(`${imported.chatContents.length} chat histories`);
+            }
+            message.push('settings');
             
             if (message.length > 0) {
-              alert(`Successfully imported: ${message.join(' and ')}`);
+              alert(`Successfully imported: ${message.join(', ')}`);
             } else {
               alert('All imported items already exist in the list');
             }
@@ -1689,7 +4555,7 @@ document.addEventListener('DOMContentLoaded', () => {
           url: 'prompt-editor.html?id=' + promptId,
           type: 'popup',
           width: 600,
-          height: 500
+          height: 580
         });
       }
       
@@ -1722,7 +4588,7 @@ document.addEventListener('DOMContentLoaded', () => {
       url: 'prompt-editor.html',
       type: 'popup',
       width: 600,
-      height: 500
+      height: 580
     });
   });
 
@@ -1830,6 +4696,18 @@ document.addEventListener('DOMContentLoaded', () => {
     promptsList.appendChild(pinnedContainer);
     promptsList.appendChild(unpinnedContainer);
 
+    // Функция для очистки HTML тегов
+    function stripHtml(html) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      return tmp.textContent || tmp.innerText || '';
+    }
+
+    // Функция для обрезки текста
+    function truncateText(text, maxLength) {
+      return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+
     // Функция обновления порядка закрепленных промптов
     function updatePinnedOrder() {
       const pinnedPrompts = Array.from(pinnedContainer.children);
@@ -1858,14 +4736,15 @@ document.addEventListener('DOMContentLoaded', () => {
         promptElement.setAttribute('draggable', 'true');
       }
       
-      // Обрезаем текст промпта до 120 символов
-      const truncatedText = prompt.text.length > 120 ? 
-        prompt.text.substring(0, 120) + '...' : 
-        prompt.text;
+      // Обрезаем текст промпта до 120 символов для отображения
+      const truncatedText = truncateText(prompt.text, 120);
+      
+      // Подготавливаем текст для тултипа: очищаем от HTML и ограничиваем 300 символами
+      const tooltipText = truncateText(stripHtml(prompt.text), 300);
       
       promptElement.innerHTML = `
         <div class="prompt-title">${prompt.pinned ? '📌 ' : ''}${prompt.title}</div>
-        <div class="prompt-text" title="${prompt.text}">${truncatedText}</div>
+        <div class="prompt-text" title="${tooltipText}">${truncatedText}</div>
         ${prompt.tags && prompt.tags.length > 0 ? 
           `<div class="prompt-tags">${prompt.tags.map(tag => `<span class="tag">#${tag}</span>`).join(' ')}</div>` 
           : ''}
@@ -2131,4 +5010,258 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
   }
+
+  // Добавляем слушатель сообщений от chat-viewer
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'updateDescription') {
+      // Обновляем описание в избранном
+      chrome.storage.sync.get(['favorites'], (result) => {
+        const favorites = result.favorites || [];
+        const updatedFavorites = favorites.map(f => {
+          if (f.timestamp === message.timestamp) {
+            return { ...f, description: message.description };
+          }
+          return f;
+        });
+
+        chrome.storage.sync.set({ favorites: updatedFavorites }, () => {
+          // Обновляем текущие избранные
+          currentFavorites = updatedFavorites;
+          
+          // Обновляем поле описания в форме редактирования, если она открыта
+          const editForm = document.querySelector('.edit-form');
+          if (editForm) {
+            const descriptionTextarea = editForm.querySelector('.edit-description');
+            if (descriptionTextarea) {
+              descriptionTextarea.value = message.description;
+            }
+          }
+
+          // Обновляем отображение списка избранного
+          filterFavorites(searchInput.value);
+        });
+      });
+    }
+  });
+
+  // Обновляем слушатель сообщений от других окон
+  window.addEventListener('message', (event) => {
+    if (event.data.action === 'updateDescription') {
+      // Обновляем описание в избранном
+      chrome.storage.sync.get(['favorites'], (result) => {
+        const favorites = result.favorites || [];
+        const updatedFavorites = favorites.map(f => {
+          if (f.timestamp === event.data.timestamp) {
+            return { ...f, description: event.data.description };
+          }
+          return f;
+        });
+
+        chrome.storage.sync.set({ favorites: updatedFavorites }, () => {
+          // Обновляем текущие избранные
+          currentFavorites = updatedFavorites;
+          
+          // Обновляем поле описания в форме редактирования, если она открыта
+          const editForm = document.querySelector('.edit-form');
+          if (editForm) {
+            const descriptionTextarea = editForm.querySelector('.edit-description');
+            if (descriptionTextarea) {
+              descriptionTextarea.value = event.data.description;
+            }
+          }
+
+          // Обновляем отображение списка избранного
+          filterFavorites(searchInput.value);
+        });
+      });
+    }
+  });
+
+  // Функция для безопасного отображения HTML
+  function renderHTML(html) {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return div.textContent || div.innerText || '';
+  }
+
+  // Добавляем функцию проверки соединения
+  let settingsBeforeCheck = null;
+
+  async function checkConnection(settings) {
+    const checkConnectionBtn = document.getElementById('checkConnectionBtn');
+    
+    try {
+      checkConnectionBtn.classList.add('checking');
+      checkConnectionBtn.textContent = '⌛';
+      
+      const currentProvider = settings.provider;
+      const apiKey = settings.apiKeys[currentProvider];
+
+      if (!apiKey) {
+        throw new Error('API key not found');
+      }
+
+      // Временно применяем новые настройки для проверки
+      await chrome.storage.sync.set({ settings });
+
+      let response;
+      let result;
+      
+      if (currentProvider === 'google') {
+        const apiVersion = settings.model === 'gemini-pro' ? 'v1' : 'v1beta';
+        const modelId = settings.model === 'gemini-pro' ? 'gemini-pro' : settings.model;
+        
+        response = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${modelId}:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: 'Generate a one-word response: "test"'
+              }]
+            }]
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts || !data.candidates[0].content.parts[0]) {
+          throw new Error('Invalid API response format from Google AI');
+        }
+        result = data.candidates[0].content.parts[0].text;
+
+      } else {
+        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'HTTP-Referer': 'https://github.com/your-username/deepseek-favorites',
+            'X-Title': 'DeepSeek Favorites Extension'
+          },
+          body: JSON.stringify({
+            model: settings.model,
+            messages: [
+              {
+                role: 'user',
+                content: 'Generate a one-word response: "test"'
+              }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0 || !data.choices[0].message || !data.choices[0].message.content) {
+          throw new Error('Invalid API response format from OpenRouter');
+        }
+        result = data.choices[0].message.content;
+      }
+
+      // Проверяем, что получили какой-то текст в ответе
+      if (!result || typeof result !== 'string' || result.trim().length === 0) {
+        throw new Error('Empty or invalid response from the model');
+      }
+
+      // Если дошли до сюда, значит соединение успешно
+      checkConnectionBtn.classList.remove('checking', 'error');
+      checkConnectionBtn.classList.add('success');
+      checkConnectionBtn.textContent = '✓';
+      showNotification('Connection successful! Model responded correctly.');
+
+      // Через 3 секунды возвращаем кнопку в исходное состояние
+      setTimeout(() => {
+        checkConnectionBtn.classList.remove('success');
+        checkConnectionBtn.textContent = '🔄';
+      }, 3000);
+
+    } catch (error) {
+      console.error('Connection check failed:', error);
+      checkConnectionBtn.classList.remove('checking', 'success');
+      checkConnectionBtn.classList.add('error');
+      checkConnectionBtn.textContent = '✕';
+      showNotification('Connection failed: ' + error.message, true);
+
+      // Через 3 секунды возвращаем кнопку в исходное состояние
+      setTimeout(() => {
+        checkConnectionBtn.classList.remove('error');
+        checkConnectionBtn.textContent = '🔄';
+      }, 3000);
+    }
+  }
+
+  // Добавляем обработчик для кнопки проверки соединения
+  document.getElementById('checkConnectionBtn').addEventListener('click', async () => {
+    const currentProvider = providerSelect.value;
+    
+    // Получаем текущие настройки для сохранения всех API ключей
+    const currentSettings = await new Promise(resolve => {
+      chrome.storage.sync.get(['settings'], result => {
+        resolve(result.settings || DEFAULT_SETTINGS);
+      });
+    });
+
+    const newSettings = {
+      provider: currentProvider,
+      apiKeys: {
+        ...currentSettings.apiKeys,
+        [currentProvider]: apiKeyInput.value.trim()
+      },
+      model: modelSelect.value,
+      summaryPrompt: summaryPromptInput.value.trim() || DEFAULT_SETTINGS.summaryPrompt
+    };
+    
+    checkConnection(newSettings);
+  });
+
+  // Загрузка настроек
+  function loadSettings() {
+    chrome.storage.sync.get(['settings'], (result) => {
+      const settings = result.settings || DEFAULT_SETTINGS;
+      lastSavedSettings = settings;
+      
+      // Обновляем провайдера
+      providerSelect.value = settings.provider || 'openrouter';
+      
+      // Обновляем список моделей для выбранного провайдера
+      updateModelsList(settings.provider);
+      
+      // Устанавливаем API ключ для текущего провайдера
+      apiKeyInput.value = settings.apiKeys[settings.provider] || '';
+      
+      // Устанавливаем значение модели после обновления списка
+      if (settings.model) {
+        modelSelect.value = settings.model;
+      } else {
+        // Если модель не выбрана, берем первую из списка для текущего провайдера
+        modelSelect.value = PROVIDER_MODELS[settings.provider][0].value;
+      }
+      
+      summaryPromptInput.value = settings.summaryPrompt || DEFAULT_SETTINGS.summaryPrompt;
+    });
+  }
+
+  // Обработчик изменения провайдера
+  providerSelect.addEventListener('change', (e) => {
+    const newProvider = e.target.value;
+    
+    // Загружаем настройки для получения текущих API ключей
+    chrome.storage.sync.get(['settings'], (result) => {
+      const settings = result.settings || DEFAULT_SETTINGS;
+      
+      // Обновляем API ключ для нового провайдера
+      apiKeyInput.value = settings.apiKeys[newProvider] || '';
+      
+      // Обновляем список моделей
+      updateModelsList(newProvider);
+    });
+  });
 }); 

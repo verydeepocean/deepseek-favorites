@@ -164,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     .form-group textarea {
       resize: vertical;
-      min-height: 100px;
+      min-height: 200px;
     }
 
     .form-group input:focus,
