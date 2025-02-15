@@ -108,6 +108,10 @@
           <label for="titlePrompt">Title Prompt Template</label>
           <textarea id="titlePrompt" placeholder="Enter prompt template for generating titles">Come up with a name for this chat up to 50 characters. Short, clear and concise. Capture only the essence. The language of the name should match the language of the chat. Return only the name without quotes: {text}</textarea>
         </div>
+        <div class="settings-group tags-prompt">
+          <label for="tagsPrompt">Tags Prompt Template</label>
+          <textarea id="tagsPrompt" placeholder="Enter prompt template for generating tags">Generate 3-5 relevant tags for this chat. Each tag should be 1-2 words, separated by spaces. Tags should reflect the main topics, technologies, or concepts discussed. Return only the tags without quotes or commas: {text}</textarea>
+        </div>
         <div class="settings-actions">
           <button type="button" class="btn btn-secondary settings-close">Cancel</button>
           <button type="button" class="btn btn-primary" id="saveSettings">Save</button>

@@ -22,33 +22,41 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "contentScriptReady") {
     console.log('Content script is ready in tab:', sender.tab.id);
+    sendResponse({ status: 'acknowledged' });
   }
 });
 
 // Обработчик клика по пункту меню
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "addToFavorites") {
     console.log('Context menu clicked:', info, tab);
     
-    // Отправляем сообщение в content script
-    chrome.tabs.sendMessage(tab.id, {
-      action: "addToFavorites",
-      selectionText: info.selectionText || ''
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('Error sending message:', chrome.runtime.lastError);
-        // Если возникла ошибка, пробуем перезагрузить страницу и отправить снова
-        chrome.tabs.reload(tab.id, {}, () => {
-          setTimeout(() => {
-            chrome.tabs.sendMessage(tab.id, {
-              action: "addToFavorites",
-              selectionText: info.selectionText || ''
-            });
-          }, 2000);
+    try {
+      // Проверяем, загружен ли content script
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        action: "addToFavorites",
+        selectionText: info.selectionText || ''
+      });
+      
+      console.log('Message sent successfully:', response);
+    } catch (error) {
+      console.error('Error sending message:', error);
+      
+      // Если content script не загружен, перезагружаем страницу и пробуем снова
+      try {
+        await chrome.tabs.reload(tab.id);
+        // Ждем 2 секунды после перезагрузки
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const retryResponse = await chrome.tabs.sendMessage(tab.id, {
+          action: "addToFavorites",
+          selectionText: info.selectionText || ''
         });
-      } else {
-        console.log('Message sent successfully:', response);
+        
+        console.log('Retry message sent successfully:', retryResponse);
+      } catch (retryError) {
+        console.error('Error on retry:', retryError);
       }
-    });
+    }
   }
 }); 

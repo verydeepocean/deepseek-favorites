@@ -372,35 +372,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   function showNotification(message, isError = false) {
     const notification = document.createElement('div');
     notification.textContent = message;
-    notification.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      padding: 12px 24px;
-      background: ${isError ? '#dc3545' : '#198754'};
-      color: white;
-      border-radius: 4px;
-      font-size: 14px;
-      z-index: 1000;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: all 0.3s ease;
-    `;
+    notification.className = `notification ${isError ? 'error' : 'success'}`;
     
     document.body.appendChild(notification);
     
     // Анимация появления
     setTimeout(() => {
-      notification.style.opacity = '1';
-      notification.style.transform = 'translateY(0)';
+      notification.classList.add('show');
     }, 100);
     
     // Удаление через 3 секунды
     setTimeout(() => {
-      notification.style.opacity = '0';
-      notification.style.transform = 'translateY(10px)';
+      notification.classList.remove('show');
       setTimeout(() => notification.remove(), 300);
     }, 3000);
+  }
+
+  // Обработчики для кнопок копирования
+  function showCopyButton(copyBtn) {
+    copyBtn.classList.remove('hidden');
+    copyBtn.classList.add('visible');
+  }
+
+  function hideCopyButton(copyBtn) {
+    copyBtn.classList.remove('visible');
+    copyBtn.classList.add('hidden');
   }
 
   // Добавляем слушатель сообщений от других окон

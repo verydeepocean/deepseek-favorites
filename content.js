@@ -35,56 +35,76 @@ function getCleanMessageText(container) {
   return cleanText;
 }
 
-// Функция для показа уведомления
-function showNotification(message, isWarning = false) {
-  // Проверяем, нет ли уже уведомления
-  let notification = document.querySelector('.favorites-notification');
-  if (notification) {
-    notification.remove();
-  }
+// Добавляем стили для уведомлений сразу при загрузке скрипта
+(function initializeNotifications() {
+  const notificationStyles = document.createElement('style');
+  notificationStyles.textContent = `
+    .deepseek-notification {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      z-index: 2147483647;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      max-width: 300px;
+      word-wrap: break-word;
+      pointer-events: none;
+    }
+
+    .deepseek-notification.success {
+      background: #198754;
+      color: white;
+    }
+
+    .deepseek-notification.error {
+      background: #dc3545;
+      color: white;
+    }
+
+    .deepseek-notification.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  `;
+  document.documentElement.appendChild(notificationStyles);
+})();
+
+// Обновленная функция для показа уведомления
+function showNotification(message, isError = false) {
+  console.log('Showing notification:', message, 'isError:', isError);
   
-  // Создаем уведомление
-  notification = document.createElement('div');
-  notification.className = 'favorites-notification';
+  // Удаляем существующие уведомления
+  const existingNotifications = document.querySelectorAll('.deepseek-notification');
+  existingNotifications.forEach(notification => notification.remove());
+
+  const notification = document.createElement('div');
+  notification.className = `deepseek-notification ${isError ? 'error' : 'success'}`;
+  
   // Разделяем заголовок и текст сообщения
   const [title, text] = message.split('\n');
   notification.innerHTML = `
     <div style="font-weight: bold; margin-bottom: 4px;">${title}</div>
-    ${text ? `<div style="font-size: 12px; opacity: 0.9; word-wrap: break-word;">${text}</div>` : ''}
-  `;
-  notification.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background-color: ${isWarning ? '#FFA500' : '#4CAF50'};
-    color: ${isWarning ? '#000000' : '#FFFFFF'};
-    padding: 12px 24px;
-    border-radius: 4px;
-    font-size: 14px;
-    z-index: 10000;
-    opacity: 0;
-    transform: translateY(20px);
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    max-width: 300px;
-    word-wrap: break-word;
+    ${text ? `<div style="font-size: 12px; opacity: 0.9;">${text}</div>` : ''}
   `;
   
-  // Добавляем уведомление на страницу
-  document.body.appendChild(notification);
+  document.documentElement.appendChild(notification);
   
-  // Анимируем появление
-  setTimeout(() => {
-    notification.style.opacity = '1';
-    notification.style.transform = 'translateY(0)';
-  }, 100);
+  // Анимация появления
+  requestAnimationFrame(() => {
+    notification.classList.add('show');
+  });
   
-  // Удаляем через 5 секунд для ошибок и 3 секунды для обычных уведомлений
+  // Удаление через 3 секунды для обычных уведомлений и 5 секунд для ошибок
+  const duration = isError ? 5000 : 3000;
   setTimeout(() => {
-    notification.style.opacity = '0';
-    notification.style.transform = 'translateY(20px)';
+    notification.classList.remove('show');
     setTimeout(() => notification.remove(), 300);
-  }, isWarning ? 5000 : 3000);
+  }, duration);
 }
 
 // Функция для получения HTML содержимого сообщения
@@ -204,11 +224,12 @@ async function saveChunks(key, chunks) {
   });
 }
 
-// Функция для добавления в избранное
+// Обновленная функция добавления в избранное
 async function addToFavorites(chatTitle, messageText = '') {
+  console.log('Starting addToFavorites...', { chatTitle, messageText });
   try {
-    // Получаем содержимое чата
     const chatContent = await getChatContent();
+    console.log('Chat content retrieved:', chatContent);
     
     const favorite = {
       title: chatTitle.slice(0, 200),
@@ -218,25 +239,24 @@ async function addToFavorites(chatTitle, messageText = '') {
       hasContent: true
     };
     
-    // Сохраняем и ждем результата
+    console.log('Created favorite object:', favorite);
+    
     await new Promise((resolve, reject) => {
       chrome.storage.sync.get(['favorites'], async (result) => {
         try {
           const favorites = result.favorites || [];
           
-          // Проверяем, нет ли уже такого чата
           if (!favorites.some(f => f.url === favorite.url)) {
             favorites.push(favorite);
             
-            // Сохраняем метаданные в sync storage
             chrome.storage.sync.set({ favorites }, async () => {
               if (chrome.runtime.lastError) {
+                console.error('Storage error:', chrome.runtime.lastError);
                 reject(new Error('Storage error: ' + chrome.runtime.lastError.message));
                 return;
               }
               
               try {
-                // Сохраняем содержимое чата в local storage
                 const chunks = splitIntoChunks(chatContent);
                 await saveChunks(favorite.timestamp, chunks);
                 

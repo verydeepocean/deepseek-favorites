@@ -84,7 +84,8 @@ document.addEventListener('DOMContentLoaded', () => {
     },
     model: '',
     titlePrompt: 'Come up with a name for this chat up to 50 characters. Short, clear and concise. Capture only the essence. The language of the name should match the language of the chat. Return only the name without quotes: {text}',
-    summaryPrompt: 'Please generate a concise summary of this chat conversation in 2-3 sentences: {text}'
+    summaryPrompt: 'Please generate a concise summary of this chat conversation in 2-3 sentences: {text}',
+    tagsPrompt: 'Generate 3-5 relevant tags for this chat. Each tag should be 1-2 words, separated by spaces. Tags should reflect the main topics, technologies, or concepts discussed. Return only the tags without quotes or commas: {text}'
   };
 
   // Элементы настроек
@@ -97,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const modelSelect = document.getElementById('model');
   const summaryPromptInput = document.getElementById('summaryPrompt');
   const titlePromptInput = document.getElementById('titlePrompt');
+  const tagsPromptInput = document.getElementById('tagsPrompt');
 
   // Модели для каждого провайдера
   const PROVIDER_MODELS = {
@@ -159,7 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       model: modelSelect.value,
       titlePrompt: titlePromptInput.value.trim() || DEFAULT_SETTINGS.titlePrompt,
-      summaryPrompt: summaryPromptInput.value.trim() || DEFAULT_SETTINGS.summaryPrompt
+      summaryPrompt: summaryPromptInput.value.trim() || DEFAULT_SETTINGS.summaryPrompt,
+      tagsPrompt: tagsPromptInput.value.trim() || DEFAULT_SETTINGS.tagsPrompt
     };
 
     // Проверка наличия API ключа для текущего провайдера
@@ -184,33 +187,18 @@ document.addEventListener('DOMContentLoaded', () => {
   function showNotification(message, isError = false) {
     const notification = document.createElement('div');
     notification.textContent = message;
-    notification.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      padding: 12px 24px;
-      background: ${isError ? '#dc3545' : '#198754'};
-      color: white;
-      border-radius: 4px;
-      font-size: 14px;
-      z-index: 1000;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: all 0.3s ease;
-    `;
+    notification.className = `notification ${isError ? 'error' : 'success'}`;
     
     document.body.appendChild(notification);
     
     // Анимация появления
     setTimeout(() => {
-      notification.style.opacity = '1';
-      notification.style.transform = 'translateY(0)';
+      notification.classList.add('show');
     }, 100);
     
     // Удаление через 3 секунды
     setTimeout(() => {
-      notification.style.opacity = '0';
-      notification.style.transform = 'translateY(10px)';
+      notification.classList.remove('show');
       setTimeout(() => notification.remove(), 300);
     }, 3000);
   }
@@ -233,6 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modelSelect.value = lastSavedSettings.model;
         titlePromptInput.value = lastSavedSettings.titlePrompt;
         summaryPromptInput.value = lastSavedSettings.summaryPrompt;
+        tagsPromptInput.value = lastSavedSettings.tagsPrompt;
       }
       settingsModal.classList.remove('active');
     });
@@ -250,6 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modelSelect.value = lastSavedSettings.model;
         titlePromptInput.value = lastSavedSettings.titlePrompt;
         summaryPromptInput.value = lastSavedSettings.summaryPrompt;
+        tagsPromptInput.value = lastSavedSettings.tagsPrompt;
       }
       settingsModal.classList.remove('active');
     }
@@ -330,31 +320,31 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         // Используем OpenRouter API
         response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${settings.apiKeys[settings.provider]}`,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${settings.apiKeys[settings.provider]}`,
             'HTTP-Referer': 'https://github.com/your-username/deepseek-favorites',
-          'X-Title': 'DeepSeek Favorites Extension'
-        },
-        body: JSON.stringify({
-          model: settings.model,
-          messages: [
-            {
-              role: 'user',
-              content: settings.summaryPrompt.replace('{text}', text)
-            }
-          ]
-        })
-      });
+            'X-Title': 'DeepSeek Favorites Extension'
+          },
+          body: JSON.stringify({
+            model: settings.model,
+            messages: [
+              {
+                role: 'user',
+                content: settings.summaryPrompt.replace('{text}', text)
+              }
+            ]
+          })
+        });
 
-      if (!response.ok) {
-        const error = await response.json();
+        if (!response.ok) {
+          const error = await response.json();
           console.error('OpenRouter API error:', error);
           throw new Error(error.message || `API error: ${response.status} ${response.statusText}`);
-      }
+        }
 
-      const data = await response.json();
+        const data = await response.json();
         console.log('OpenRouter API response:', data);
 
         if (!data || !data.choices) {
@@ -3410,21 +3400,24 @@ document.addEventListener('DOMContentLoaded', () => {
     form.innerHTML = `
       <div class="form-group">
         <div class="label-with-button">
-        <label for="editTitle_${favorite.timestamp}">Title</label>
+          <label for="editTitle_${favorite.timestamp}">Title</label>
           <button type="button" class="generate-btn generate-title-btn" title="Generate Title with AI">📝</button>
         </div>
         <input type="text" id="editTitle_${favorite.timestamp}" class="edit-title" placeholder="Enter title" value="${favorite.title || ''}">
       </div>
       <div class="form-group">
-        <label for="editTags_${favorite.timestamp}">Tags</label>
+        <div class="label-with-button">
+          <label for="editTags_${favorite.timestamp}">Tags</label>
+          <button type="button" class="generate-btn generate-tags-btn" title="Generate Tags with AI">📝</button>
+        </div>
         <input type="text" id="editTags_${favorite.timestamp}" class="edit-tags" placeholder="Add space-separated tags" value="${(favorite.tags || []).join(' ')}">
       </div>
       <div class="form-group">
         <div class="label-with-button">
-        <label for="editDescription_${favorite.timestamp}">Description</label>
+          <label for="editDescription_${favorite.timestamp}">Description</label>
           <button type="button" class="generate-btn" title="Generate Summary with AI">📝</button>
         </div>
-          <textarea id="editDescription_${favorite.timestamp}" class="edit-description" placeholder="Add chat description">${favorite.description || ''}</textarea>
+        <textarea id="editDescription_${favorite.timestamp}" class="edit-description" placeholder="Add chat description">${favorite.description || ''}</textarea>
       </div>
       <div class="button-group">
         <button type="button" class="btn btn-secondary cancel-edit" data-action="cancel">Cancel</button>
@@ -3435,20 +3428,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // Находим кнопки и поля ввода
     const saveButton = form.querySelector('[data-action="save"]');
     const cancelButton = form.querySelector('[data-action="cancel"]');
-    const generateDescButton = form.querySelector('.generate-btn:not(.generate-title-btn)');
+    const generateDescButton = form.querySelector('.generate-btn:not(.generate-title-btn):not(.generate-tags-btn)');
     const generateTitleButton = form.querySelector('.generate-title-btn');
+    const generateTagsButton = form.querySelector('.generate-tags-btn');
     const titleInput = form.querySelector('.edit-title');
     const tagsInput = form.querySelector('.edit-tags');
     const descriptionInput = form.querySelector('.edit-description');
 
     // Добавляем обработчик для кнопки генерации названия
     generateTitleButton.addEventListener('click', async () => {
+      generateTitleButton.classList.add('loading');
+      generateTitleButton.innerHTML = '⌛';
       try {
-        // Показываем состояние загрузки
-        generateTitleButton.disabled = true;
-        generateTitleButton.style.opacity = '0.7';
-        generateTitleButton.textContent = '⌛';
-
         // Загружаем содержимое чата
         const chatData = await loadChatContent(favorite.timestamp);
         
@@ -3458,141 +3449,52 @@ document.addEventListener('DOMContentLoaded', () => {
           return `${role}: ${message.content}`;
         }).join('\n\n');
 
-        // Получаем настройки
-        const settings = await new Promise(resolve => {
-          chrome.storage.sync.get(['settings'], result => {
-            resolve(result.settings || DEFAULT_SETTINGS);
-          });
-        });
-
-        if (!settings.apiKeys[settings.provider]) {
-          throw new Error('API key not found. Please add it in Settings.');
+        const title = await generateTitle(chatText);
+        if (title) {
+          titleInput.value = title;
         }
-
-        let response;
-        let title;
-
-        if (settings.provider === 'google') {
-          // Используем Google AI API
-          const apiVersion = settings.model === 'gemini-pro' ? 'v1' : 'v1beta';
-          const modelId = settings.model === 'gemini-pro' ? 'gemini-pro' : settings.model;
-          
-          response = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${modelId}:generateContent?key=${settings.apiKeys[settings.provider]}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              contents: [{
-                parts: [{
-                  text: settings.titlePrompt.replace('{text}', chatText)
-                }]
-              }]
-            })
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            console.error('Google AI API error:', error);
-            throw new Error(error.error?.message || 'Failed to generate title');
-          }
-
-          const data = await response.json();
-          console.log('Google AI API response:', data);
-
-          if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-            console.error('Invalid Google AI response format:', data);
-            throw new Error('Invalid response format from Google AI');
-          }
-
-          const content = data.candidates[0].content;
-          if (!content.parts || !content.parts[0] || !content.parts[0].text) {
-            console.error('Missing text in Google AI response:', content);
-            throw new Error('No text generated from Google AI');
-          }
-
-          title = content.parts[0].text;
-        } else {
-          // Используем OpenRouter API
-          response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${settings.apiKeys[settings.provider]}`,
-            'HTTP-Referer': 'https://github.com/your-username/deepseek-favorites',
-            'X-Title': 'DeepSeek Favorites Extension'
-          },
-          body: JSON.stringify({
-            model: settings.model,
-            messages: [
-              {
-                role: 'user',
-                content: settings.titlePrompt.replace('{text}', chatText)
-              }
-            ]
-          })
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-            console.error('OpenRouter API error:', error);
-            throw new Error(error.message || `API error: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-          console.log('OpenRouter API response:', data);
-
-          if (!data || !data.choices) {
-            console.error('Invalid API response format:', data);
-            throw new Error('Invalid API response format - missing choices array');
-          }
-
-          if (data.choices.length === 0) {
-            console.error('Empty choices array in response:', data);
-            throw new Error('No response generated from the model');
-          }
-
-          const firstChoice = data.choices[0];
-          if (!firstChoice || !firstChoice.message) {
-            console.error('Invalid choice format:', firstChoice);
-            throw new Error('Invalid response format - missing message');
-          }
-
-          title = firstChoice.message.content;
-          if (!title) {
-            console.error('Empty content in response:', firstChoice);
-            throw new Error('Empty response from the model');
-          }
-        }
-
-        // Обновляем поле названия
-        titleInput.value = title;
-
-        // Копируем название в буфер обмена
-        await navigator.clipboard.writeText(title);
-
-        // Показываем уведомление об успехе
-        showNotification('Title generated and copied to clipboard!');
-
       } catch (error) {
         console.error('Error generating title:', error);
         showNotification(error.message || 'Failed to generate title. Please try again.', true);
       } finally {
-        // Возвращаем кнопку в исходное состояние
-        generateTitleButton.disabled = false;
-        generateTitleButton.style.opacity = '1';
-        generateTitleButton.textContent = '📝';
+        generateTitleButton.classList.remove('loading');
+        generateTitleButton.innerHTML = '📝';
+      }
+    });
+
+    // Добавляем обработчик для кнопки генерации тегов
+    generateTagsButton.addEventListener('click', async () => {
+      generateTagsButton.classList.add('loading');
+      generateTagsButton.innerHTML = '⌛';
+      try {
+        // Загружаем содержимое чата
+        const chatData = await loadChatContent(favorite.timestamp);
+        
+        // Формируем текст для генерации тегов
+        const chatText = chatData.map(message => {
+          const role = message.type === 'question' ? 'User' : 'Assistant';
+          return `${role}: ${message.content}`;
+        }).join('\n\n');
+
+        const tags = await generateTags(chatText);
+        if (tags) {
+          tagsInput.value = tags;
+          showNotification('Tags generated successfully!');
+        }
+      } catch (error) {
+        console.error('Error generating tags:', error);
+        showNotification(error.message || 'Failed to generate tags. Please try again.', true);
+      } finally {
+        generateTagsButton.classList.remove('loading');
+        generateTagsButton.innerHTML = '📝';
       }
     });
 
     // Добавляем обработчик для кнопки генерации summary
     generateDescButton.addEventListener('click', async () => {
+      generateDescButton.classList.add('loading');
+      generateDescButton.innerHTML = '⌛';
       try {
-        // Показываем состояние загрузки
-        generateDescButton.disabled = true;
-        generateDescButton.style.opacity = '0.7';
-        generateDescButton.textContent = '⌛ Generating...';
-
         // Загружаем содержимое чата
         const chatData = await loadChatContent(favorite.timestamp);
         
@@ -3602,130 +3504,20 @@ document.addEventListener('DOMContentLoaded', () => {
           return `${role}: ${message.content}`;
         }).join('\n\n');
 
-        // Получаем настройки
-        const settings = await new Promise(resolve => {
-          chrome.storage.sync.get(['settings'], result => {
-            resolve(result.settings || DEFAULT_SETTINGS);
-          });
-        });
-
-        if (!settings.apiKeys[settings.provider]) {
-          throw new Error('API key not found. Please add it in Settings.');
-        }
-
-        let response;
-        let summary;
-
-        if (settings.provider === 'google') {
-          // Используем Google AI API
-          const apiVersion = settings.model === 'gemini-pro' ? 'v1' : 'v1beta';
-          const modelId = settings.model === 'gemini-pro' ? 'gemini-pro' : settings.model;
+        const summary = await generateSummary(chatText);
+        if (summary) {
+          descriptionInput.value = summary;
           
-          response = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${modelId}:generateContent?key=${settings.apiKeys[settings.provider]}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              contents: [{
-                parts: [{
-                  text: settings.summaryPrompt.replace('{text}', chatText)
-                }]
-              }]
-            })
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            console.error('Google AI API error:', error);
-            throw new Error(error.error?.message || 'Failed to generate summary');
-          }
-
-          const data = await response.json();
-          console.log('Google AI API response:', data);
-
-          if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-            console.error('Invalid Google AI response format:', data);
-            throw new Error('Invalid response format from Google AI');
-          }
-
-          const content = data.candidates[0].content;
-          if (!content.parts || !content.parts[0] || !content.parts[0].text) {
-            console.error('Missing text in Google AI response:', content);
-            throw new Error('No text generated from Google AI');
-          }
-
-          summary = content.parts[0].text;
-        } else {
-          // Используем OpenRouter API
-          response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${settings.apiKeys[settings.provider]}`,
-            'HTTP-Referer': 'https://github.com/your-username/deepseek-favorites',
-            'X-Title': 'DeepSeek Favorites Extension'
-          },
-          body: JSON.stringify({
-            model: settings.model,
-            messages: [
-              {
-                role: 'user',
-                content: settings.summaryPrompt.replace('{text}', chatText)
-              }
-            ]
-          })
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-            console.error('OpenRouter API error:', error);
-            throw new Error(error.message || `API error: ${response.status} ${response.statusText}`);
+          // Копируем summary в буфер обмена
+          await navigator.clipboard.writeText(summary);
+          showNotification('Summary generated and copied to clipboard!');
         }
-
-        const data = await response.json();
-          console.log('OpenRouter API response:', data);
-
-          if (!data || !data.choices) {
-            console.error('Invalid API response format:', data);
-            throw new Error('Invalid API response format - missing choices array');
-          }
-
-          if (data.choices.length === 0) {
-            console.error('Empty choices array in response:', data);
-            throw new Error('No response generated from the model');
-          }
-
-          const firstChoice = data.choices[0];
-          if (!firstChoice || !firstChoice.message) {
-            console.error('Invalid choice format:', firstChoice);
-            throw new Error('Invalid response format - missing message');
-          }
-
-          summary = firstChoice.message.content;
-          if (!summary) {
-            console.error('Empty content in response:', firstChoice);
-            throw new Error('Empty response from the model');
-          }
-        }
-
-        // Обновляем поле описания
-        descriptionInput.value = summary;
-
-        // Копируем summary в буфер обмена
-        await navigator.clipboard.writeText(summary);
-
-        // Показываем уведомление об успехе
-        showNotification('Summary generated and copied to clipboard!');
-
       } catch (error) {
         console.error('Error generating summary:', error);
         showNotification(error.message || 'Failed to generate summary. Please try again.', true);
       } finally {
-        // Возвращаем кнопку в исходное состояние
-        generateDescButton.disabled = false;
-        generateDescButton.style.opacity = '1';
-        generateDescButton.textContent = '📝 Generate';
+        generateDescButton.classList.remove('loading');
+        generateDescButton.innerHTML = '📝';
       }
     });
 
@@ -3848,12 +3640,10 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Функция для скрытия формы редактирования
   function hideEditForm() {
-    const forms = document.querySelectorAll('.edit-form');
-    forms.forEach(form => {
-      form.style.animation = 'slideOut 0.3s ease forwards';
-      setTimeout(() => form.remove(), 300);
-    });
-    currentEditingId = null;
+    const form = document.querySelector('.edit-form');
+    if (form) {
+      closeFormWithAnimation(form);
+    }
   }
   
   // Функция для фильтрации избранного
@@ -4132,18 +3922,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Обработчики для drag and drop
       if (favorite.pinned) {
-        chatElement.addEventListener('dragstart', (e) => {
-          e.dataTransfer.setData('text/plain', favorite.timestamp);
-          chatElement.classList.add('dragging');
-          chatElement.style.opacity = '0.5';
-        });
-
-        chatElement.addEventListener('dragend', () => {
-          chatElement.classList.remove('dragging');
-          chatElement.style.opacity = '1';
-          updatePinnedOrder();
-        });
-
+        chatElement.addEventListener('dragstart', handleDragStart);
+        chatElement.addEventListener('dragend', handleDragEnd);
         chatElement.addEventListener('dragover', (e) => {
           e.preventDefault();
           const draggingElement = document.querySelector('.dragging');
@@ -4322,7 +4102,8 @@ document.addEventListener('DOMContentLoaded', () => {
           ...importData.settings.apiKeys
         },
         model: importData.settings.model || DEFAULT_SETTINGS.model,
-        summaryPrompt: importData.settings.summaryPrompt || DEFAULT_SETTINGS.summaryPrompt
+        summaryPrompt: importData.settings.summaryPrompt || DEFAULT_SETTINGS.summaryPrompt,
+        tagsPrompt: importData.settings.tagsPrompt || DEFAULT_SETTINGS.tagsPrompt
       } : DEFAULT_SETTINGS;
       
       return {
@@ -4773,18 +4554,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Добавляем обработчики для drag and drop
       if (prompt.pinned) {
-        promptElement.addEventListener('dragstart', (e) => {
-          e.dataTransfer.setData('text/plain', prompt.id);
-          promptElement.classList.add('dragging');
-          promptElement.style.opacity = '0.5';
-        });
-
-        promptElement.addEventListener('dragend', () => {
-          promptElement.classList.remove('dragging');
-          promptElement.style.opacity = '1';
-          updatePinnedOrder();
-        });
-
+        promptElement.addEventListener('dragstart', handleDragStart);
+        promptElement.addEventListener('dragend', handleDragEnd);
         promptElement.addEventListener('dragover', (e) => {
           e.preventDefault();
           const draggingElement = document.querySelector('.dragging');
@@ -4998,6 +4769,8 @@ document.addEventListener('DOMContentLoaded', () => {
       // Обработчик закрытия
       const closeModal = () => {
         modal.classList.remove('active');
+        copyBtn.classList.add('hidden');
+        copyBtn.classList.remove('visible');
         closeBtn.removeEventListener('click', closeModal);
         modal.removeEventListener('click', handleOutsideClick);
         copyBtn.removeEventListener('click', handleCopy);
@@ -5232,7 +5005,8 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       model: modelSelect.value,
       titlePrompt: titlePromptInput.value.trim() || DEFAULT_SETTINGS.titlePrompt,
-      summaryPrompt: summaryPromptInput.value.trim() || DEFAULT_SETTINGS.summaryPrompt
+      summaryPrompt: summaryPromptInput.value.trim() || DEFAULT_SETTINGS.summaryPrompt,
+      tagsPrompt: tagsPromptInput.value.trim() || DEFAULT_SETTINGS.tagsPrompt
     };
     
     checkConnection(newSettings);
@@ -5258,6 +5032,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Устанавливаем шаблоны промптов
       titlePromptInput.value = settings.titlePrompt || DEFAULT_SETTINGS.titlePrompt;
       summaryPromptInput.value = settings.summaryPrompt || DEFAULT_SETTINGS.summaryPrompt;
+      tagsPromptInput.value = settings.tagsPrompt || DEFAULT_SETTINGS.tagsPrompt;
 
       // Сохраняем последние настройки
       lastSavedSettings = settings;
@@ -5273,6 +5048,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const model = document.getElementById('model').value;
       const summaryPrompt = document.getElementById('summaryPrompt').value.trim();
       const titlePrompt = document.getElementById('titlePrompt').value.trim();
+      const tagsPrompt = document.getElementById('tagsPrompt').value.trim();
 
       // Сохраняем новые настройки, сохраняя существующие API ключи
       const newSettings = {
@@ -5282,8 +5058,9 @@ document.addEventListener('DOMContentLoaded', () => {
           google: provider === 'google' ? apiKey : currentSettings.apiKeys.google
         },
         model: model,
-        titlePrompt: titlePrompt || currentSettings.titlePrompt,
-        summaryPrompt: summaryPrompt || currentSettings.summaryPrompt
+        titlePrompt: titlePrompt || DEFAULT_SETTINGS.titlePrompt,
+        summaryPrompt: summaryPrompt || DEFAULT_SETTINGS.summaryPrompt,
+        tagsPrompt: tagsPrompt || DEFAULT_SETTINGS.tagsPrompt
       };
 
       chrome.storage.sync.set({ settings: newSettings }, () => {
@@ -5332,4 +5109,273 @@ document.addEventListener('DOMContentLoaded', () => {
       saveSettings();
     });
   });
+
+  // Функция для генерации тегов
+  async function generateTags(text) {
+    const settings = await new Promise(resolve => {
+      chrome.storage.sync.get(['settings'], result => {
+        resolve(result.settings || DEFAULT_SETTINGS);
+      });
+    });
+
+    if (!settings.apiKeys[settings.provider]) {
+      throw new Error('API key is not set');
+    }
+
+    let response;
+    if (settings.provider === 'google') {
+      // Используем Google AI API
+      const apiVersion = settings.model === 'gemini-pro' ? 'v1' : 'v1beta';
+      const modelId = settings.model === 'gemini-pro' ? 'gemini-pro' : settings.model;
+      
+      response = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${modelId}:generateContent?key=${settings.apiKeys[settings.provider]}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: settings.tagsPrompt.replace('{text}', text)
+            }]
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Google AI API error:', error);
+        throw new Error(error.error?.message || 'Failed to generate tags');
+      }
+
+      const data = await response.json();
+      console.log('Google AI API response:', data);
+
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+        console.error('Invalid Google AI response format:', data);
+        throw new Error('Invalid response format from Google AI');
+      }
+
+      const content = data.candidates[0].content;
+      if (!content.parts || !content.parts[0] || !content.parts[0].text) {
+        console.error('Missing text in Google AI response:', content);
+        throw new Error('No text generated from Google AI');
+      }
+
+      return content.parts[0].text;
+    } else {
+      // Используем OpenRouter API
+      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${settings.apiKeys[settings.provider]}`,
+          'HTTP-Referer': 'https://github.com/your-username/deepseek-favorites',
+          'X-Title': 'DeepSeek Favorites Extension'
+        },
+        body: JSON.stringify({
+          model: settings.model,
+          messages: [
+            {
+              role: 'user',
+              content: settings.tagsPrompt.replace('{text}', text)
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('OpenRouter API error:', error);
+        throw new Error(error.error?.message || 'Failed to generate tags');
+      }
+
+      const data = await response.json();
+      console.log('OpenRouter API response:', data);
+
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        console.error('Invalid OpenRouter response format:', data);
+        throw new Error('Invalid response format from OpenRouter');
+      }
+
+      return data.choices[0].message.content.trim();
+    }
+  }
+
+  // Обновляем обработчики для кнопок генерации
+  function setGenerateButtonLoading(button, isLoading) {
+    button.disabled = isLoading;
+    button.classList.toggle('loading', isLoading);
+    button.textContent = isLoading ? '⌛' : '📝';
+  }
+
+  // Обновляем обработчики для drag and drop
+  function setElementDragging(element, isDragging) {
+    element.classList.toggle('dragging', isDragging);
+  }
+
+  // Обновляем обработчики для кнопок копирования
+  function setCopyButtonVisibility(button, isVisible) {
+    button.classList.toggle('visible', isVisible);
+    button.classList.toggle('hidden', !isVisible);
+  }
+
+  // Обновляем обработчик для анимации закрытия формы
+  function closeFormWithAnimation(form) {
+    form.classList.add('slide-out');
+    setTimeout(() => {
+      form.style.display = 'none';
+      form.classList.remove('slide-out');
+    }, 300);
+  }
+
+  // Для кнопок генерации заголовка и описания
+  generateTitleButton.addEventListener('click', async () => {
+    setGenerateButtonLoading(generateTitleButton, true);
+    try {
+      // ... код генерации ...
+    } finally {
+      setGenerateButtonLoading(generateTitleButton, false);
+    }
+  });
+
+  generateDescButton.addEventListener('click', async () => {
+    setGenerateButtonLoading(generateDescButton, true);
+    try {
+      // ... код генерации ...
+    } finally {
+      setGenerateButtonLoading(generateDescButton, false);
+    }
+  });
+
+  // Для drag and drop
+  function handleDragStart(e) {
+    this.classList.add('dragging');
+  }
+
+  function handleDragEnd(e) {
+    this.classList.remove('dragging');
+  }
+
+  // Функция для генерации заголовка
+  async function generateTitle(text) {
+    try {
+      const settings = await new Promise(resolve => {
+        chrome.storage.sync.get(['settings'], result => {
+          resolve(result.settings || DEFAULT_SETTINGS);
+        });
+      });
+
+      if (!settings.apiKeys[settings.provider]) {
+        throw new Error('API key not found. Please add it in Settings.');
+      }
+
+      let response;
+      let title;
+
+      if (settings.provider === 'google') {
+        // Используем Google AI API
+        const apiVersion = settings.model === 'gemini-pro' ? 'v1' : 'v1beta';
+        const modelId = settings.model === 'gemini-pro' ? 'gemini-pro' : settings.model;
+        
+        response = await fetch(`https://generativelanguage.googleapis.com/${apiVersion}/models/${modelId}:generateContent?key=${settings.apiKeys[settings.provider]}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: settings.titlePrompt.replace('{text}', text)
+              }]
+            }]
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          console.error('Google AI API error:', error);
+          throw new Error(error.error?.message || 'Failed to generate title');
+        }
+
+        const data = await response.json();
+        console.log('Google AI API response:', data);
+
+        if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+          console.error('Invalid Google AI response format:', data);
+          throw new Error('Invalid response format from Google AI');
+        }
+
+        const content = data.candidates[0].content;
+        if (!content.parts || !content.parts[0] || !content.parts[0].text) {
+          console.error('Missing text in Google AI response:', content);
+          throw new Error('No text generated from Google AI');
+        }
+
+        title = content.parts[0].text;
+      } else {
+        // Используем OpenRouter API
+        response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${settings.apiKeys[settings.provider]}`,
+            'HTTP-Referer': 'https://github.com/your-username/deepseek-favorites',
+            'X-Title': 'DeepSeek Favorites Extension'
+          },
+          body: JSON.stringify({
+            model: settings.model,
+            messages: [
+              {
+                role: 'user',
+                content: settings.titlePrompt.replace('{text}', text)
+              }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          console.error('OpenRouter API error:', error);
+          throw new Error(error.message || `API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log('OpenRouter API response:', data);
+
+        if (!data || !data.choices) {
+          console.error('Invalid API response format:', data);
+          throw new Error('Invalid API response format - missing choices array');
+        }
+
+        if (data.choices.length === 0) {
+          console.error('Empty choices array in response:', data);
+          throw new Error('No response generated from the model');
+        }
+
+        const firstChoice = data.choices[0];
+        if (!firstChoice || !firstChoice.message) {
+          console.error('Invalid choice format:', firstChoice);
+          throw new Error('Invalid response format - missing message');
+        }
+
+        title = firstChoice.message.content;
+        if (!title) {
+          console.error('Empty content in response:', firstChoice);
+          throw new Error('Empty response from the model');
+        }
+      }
+
+      // Копируем название в буфер обмена
+      await navigator.clipboard.writeText(title);
+      
+      // Показываем уведомление об успехе
+      showNotification('Title generated and copied to clipboard!');
+
+      return title;
+    } catch (error) {
+      console.error('Error generating title:', error);
+      throw new Error(`Failed to generate title: ${error.message}`);
+    }
+  }
 }); 
