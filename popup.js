@@ -82,7 +82,8 @@ document.addEventListener('DOMContentLoaded', () => {
       openrouter: '',
       google: ''
     },
-    model: 'anthropic/claude-3-sonnet',
+    model: '',
+    titlePrompt: 'Come up with a name for this chat up to 50 characters. Short, clear and concise. Capture only the essence. The language of the name should match the language of the chat. Return only the name without quotes: {text}',
     summaryPrompt: 'Please generate a concise summary of this chat conversation in 2-3 sentences: {text}'
   };
 
@@ -95,6 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const apiKeyInput = document.getElementById('apiKey');
   const modelSelect = document.getElementById('model');
   const summaryPromptInput = document.getElementById('summaryPrompt');
+  const titlePromptInput = document.getElementById('titlePrompt');
 
   // Модели для каждого провайдера
   const PROVIDER_MODELS = {
@@ -156,6 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
         [currentProvider]: apiKeyInput.value.trim()
       },
       model: modelSelect.value,
+      titlePrompt: titlePromptInput.value.trim() || DEFAULT_SETTINGS.titlePrompt,
       summaryPrompt: summaryPromptInput.value.trim() || DEFAULT_SETTINGS.summaryPrompt
     };
 
@@ -218,25 +221,37 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsModal.classList.add('active');
   });
 
+  // Закрытие окна настроек
   closeButtons.forEach(button => {
-    button.addEventListener('click', async () => {
+    button.addEventListener('click', () => {
       // Восстанавливаем последние сохраненные настройки
       if (lastSavedSettings) {
-        await chrome.storage.sync.set({ settings: lastSavedSettings });
-        loadSettings();
+        // Восстанавливаем значения полей
+        providerSelect.value = lastSavedSettings.provider;
+        updateModelsList(lastSavedSettings.provider);
+        apiKeyInput.value = lastSavedSettings.apiKeys[lastSavedSettings.provider] || '';
+        modelSelect.value = lastSavedSettings.model;
+        titlePromptInput.value = lastSavedSettings.titlePrompt;
+        summaryPromptInput.value = lastSavedSettings.summaryPrompt;
       }
       settingsModal.classList.remove('active');
     });
   });
 
-  settingsModal.addEventListener('click', async (e) => {
+  // Закрытие по клику вне окна
+  settingsModal.addEventListener('click', (e) => {
     if (e.target === settingsModal) {
       // Восстанавливаем последние сохраненные настройки
       if (lastSavedSettings) {
-        await chrome.storage.sync.set({ settings: lastSavedSettings });
-        loadSettings();
+        // Восстанавливаем значения полей
+        providerSelect.value = lastSavedSettings.provider;
+        updateModelsList(lastSavedSettings.provider);
+        apiKeyInput.value = lastSavedSettings.apiKeys[lastSavedSettings.provider] || '';
+        modelSelect.value = lastSavedSettings.model;
+        titlePromptInput.value = lastSavedSettings.titlePrompt;
+        summaryPromptInput.value = lastSavedSettings.summaryPrompt;
       }
-        settingsModal.classList.remove('active');
+      settingsModal.classList.remove('active');
     }
   });
 
@@ -3470,7 +3485,7 @@ document.addEventListener('DOMContentLoaded', () => {
             body: JSON.stringify({
               contents: [{
                 parts: [{
-                  text: `Come up with a name for this chat up to 50 characters. Short, clear and concise. Capture only the essence. The language of the name should match the language of the chat. Return only the name without quotes: ${chatText}`
+                  text: settings.titlePrompt.replace('{text}', chatText)
                 }]
               }]
             })
@@ -3512,7 +3527,7 @@ document.addEventListener('DOMContentLoaded', () => {
             messages: [
               {
                 role: 'user',
-                  content: `Come up with a name for this chat up to 50 characters. Short, clear and concise. Capture only the essence. The language of the name should match the language of the chat. Return only the name without quotes: ${chatText}`
+                content: settings.titlePrompt.replace('{text}', chatText)
               }
             ]
           })
@@ -5216,6 +5231,7 @@ document.addEventListener('DOMContentLoaded', () => {
         [currentProvider]: apiKeyInput.value.trim()
       },
       model: modelSelect.value,
+      titlePrompt: titlePromptInput.value.trim() || DEFAULT_SETTINGS.titlePrompt,
       summaryPrompt: summaryPromptInput.value.trim() || DEFAULT_SETTINGS.summaryPrompt
     };
     
@@ -5226,10 +5242,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function loadSettings() {
     chrome.storage.sync.get(['settings'], (result) => {
       const settings = result.settings || DEFAULT_SETTINGS;
-      lastSavedSettings = settings;
       
       // Обновляем провайдера
-      providerSelect.value = settings.provider || 'openrouter';
+      providerSelect.value = settings.provider;
       
       // Обновляем список моделей для выбранного провайдера
       updateModelsList(settings.provider);
@@ -5237,31 +5252,84 @@ document.addEventListener('DOMContentLoaded', () => {
       // Устанавливаем API ключ для текущего провайдера
       apiKeyInput.value = settings.apiKeys[settings.provider] || '';
       
-      // Устанавливаем значение модели после обновления списка
-      if (settings.model) {
-        modelSelect.value = settings.model;
-      } else {
-        // Если модель не выбрана, берем первую из списка для текущего провайдера
-        modelSelect.value = PROVIDER_MODELS[settings.provider][0].value;
-      }
+      // Устанавливаем значение модели
+      modelSelect.value = settings.model || PROVIDER_MODELS[settings.provider][0].value;
       
+      // Устанавливаем шаблоны промптов
+      titlePromptInput.value = settings.titlePrompt || DEFAULT_SETTINGS.titlePrompt;
       summaryPromptInput.value = settings.summaryPrompt || DEFAULT_SETTINGS.summaryPrompt;
+
+      // Сохраняем последние настройки
+      lastSavedSettings = settings;
     });
   }
 
+  // Функция сохранения настроек
+  function saveSettings() {
+    chrome.storage.sync.get(['settings'], (result) => {
+      const currentSettings = result.settings || DEFAULT_SETTINGS;
+      const provider = document.getElementById('provider').value;
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const model = document.getElementById('model').value;
+      const summaryPrompt = document.getElementById('summaryPrompt').value.trim();
+      const titlePrompt = document.getElementById('titlePrompt').value.trim();
+
+      // Сохраняем новые настройки, сохраняя существующие API ключи
+      const newSettings = {
+        provider: provider,
+        apiKeys: {
+          openrouter: provider === 'openrouter' ? apiKey : currentSettings.apiKeys.openrouter,
+          google: provider === 'google' ? apiKey : currentSettings.apiKeys.google
+        },
+        model: model,
+        titlePrompt: titlePrompt || currentSettings.titlePrompt,
+        summaryPrompt: summaryPrompt || currentSettings.summaryPrompt
+      };
+
+      chrome.storage.sync.set({ settings: newSettings }, () => {
+        console.log('Settings saved:', newSettings);
+        showNotification('Settings saved automatically');
+        lastSavedSettings = newSettings;
+      });
+    });
+  }
+
+  // Добавляем автосохранение для всех полей в настройках
+  document.querySelectorAll('#settingsModal input, #settingsModal select, #settingsModal textarea').forEach(element => {
+    ['input', 'change'].forEach(eventType => {
+      element.addEventListener(eventType, saveSettings);
+    });
+  });
+
+  // Добавляем слушатель сообщений от других окон
+  window.addEventListener('message', (event) => {
+    if (event.data.action === 'updateDescription') {
+      const editForm = document.querySelector('.edit-form');
+      if (editForm) {
+        const descriptionTextarea = editForm.querySelector('.edit-description');
+        if (descriptionTextarea) {
+          descriptionTextarea.value = event.data.description;
+        }
+      }
+    }
+  });
+
   // Обработчик изменения провайдера
-  providerSelect.addEventListener('change', (e) => {
+  document.getElementById('provider').addEventListener('change', (e) => {
     const newProvider = e.target.value;
     
-    // Загружаем настройки для получения текущих API ключей
+    // Загружаем текущие настройки
     chrome.storage.sync.get(['settings'], (result) => {
       const settings = result.settings || DEFAULT_SETTINGS;
       
-      // Обновляем API ключ для нового провайдера
-      apiKeyInput.value = settings.apiKeys[newProvider] || '';
+      // Обновляем поле API ключа
+      document.getElementById('apiKey').value = settings.apiKeys[newProvider] || '';
       
       // Обновляем список моделей
       updateModelsList(newProvider);
+      
+      // Сохраняем изменение провайдера
+      saveSettings();
     });
   });
 }); 
