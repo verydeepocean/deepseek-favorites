@@ -52,25 +52,26 @@ async function loadChatContent(chatId) {
 
 document.addEventListener('DOMContentLoaded', () => {
   const favoritesList = document.getElementById('favoritesList');
+  const promptsList = document.getElementById('promptsList');
+  const searchInput = document.getElementById('searchInput');
+  const promptSearchInput = document.getElementById('promptSearchInput');
+  const favoritesTab = document.getElementById('favoritesTab');
+  const promptsTab = document.getElementById('promptsTab');
+  const favoritesSection = document.getElementById('favoritesSection');
+  const promptsSection = document.getElementById('promptsSection');
+  const addPromptBtn = document.getElementById('addPromptBtn');
+  const lightThemeBtn = document.getElementById('lightTheme');
+  const darkThemeBtn = document.getElementById('darkTheme');
+  const exportBtn = document.getElementById('exportBtn');
+  const importFile = document.getElementById('importFile');
+  const clearDataBtn = document.getElementById('clearDataBtn');
   const editForm = document.getElementById('editForm');
   const editTitle = document.getElementById('editTitle');
   const editDescription = document.getElementById('editDescription');
   const editTags = document.getElementById('editTags');
   const saveEditBtn = document.getElementById('saveEdit');
   const cancelEditBtn = document.getElementById('cancelEdit');
-  const exportBtn = document.getElementById('exportBtn');
-  const importFile = document.getElementById('importFile');
-  const lightThemeBtn = document.getElementById('lightTheme');
-  const darkThemeBtn = document.getElementById('darkTheme');
-  const clearDataBtn = document.getElementById('clearDataBtn');
-  const searchInput = document.getElementById('searchInput');
-  const favoritesTab = document.getElementById('favoritesTab');
-  const promptsTab = document.getElementById('promptsTab');
-  const favoritesSection = document.getElementById('favoritesSection');
-  const promptsSection = document.getElementById('promptsSection');
-  const promptSearchInput = document.getElementById('promptSearchInput');
-  const addPromptBtn = document.getElementById('addPromptBtn');
-  
+
   let currentEditingId = null;
   let currentFavorites = [];
   let currentPrompts = [];
@@ -3415,7 +3416,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="form-group">
         <div class="label-with-button">
           <label for="editDescription_${favorite.timestamp}">Description</label>
-          <button type="button" class="generate-btn" title="Generate Summary with AI">📝</button>
+          <button type="button" class="generate-btn generate-desc-btn" title="Generate Summary with AI">📝</button>
         </div>
         <textarea id="editDescription_${favorite.timestamp}" class="edit-description" placeholder="Add chat description">${favorite.description || ''}</textarea>
       </div>
@@ -3428,22 +3429,56 @@ document.addEventListener('DOMContentLoaded', () => {
     // Находим кнопки и поля ввода
     const saveButton = form.querySelector('[data-action="save"]');
     const cancelButton = form.querySelector('[data-action="cancel"]');
-    const generateDescButton = form.querySelector('.generate-btn:not(.generate-title-btn):not(.generate-tags-btn)');
     const generateTitleButton = form.querySelector('.generate-title-btn');
     const generateTagsButton = form.querySelector('.generate-tags-btn');
+    const generateDescButton = form.querySelector('.generate-desc-btn');
     const titleInput = form.querySelector('.edit-title');
     const tagsInput = form.querySelector('.edit-tags');
     const descriptionInput = form.querySelector('.edit-description');
+
+    // Функция для сохранения изменений
+    const handleSave = () => {
+      const newTitle = titleInput.value.trim();
+      const newTags = tagsInput.value.trim().split(/\s+/).filter(Boolean);
+      const newDescription = descriptionInput.value.trim();
+
+      // Обновляем избранное
+      const newFavorites = currentFavorites.map(f => {
+        if (f.timestamp === favorite.timestamp) {
+          return {
+            ...f,
+            title: newTitle,
+            tags: newTags,
+            description: newDescription
+          };
+        }
+        return f;
+      });
+
+      // Сохраняем изменения
+      chrome.storage.sync.set({ favorites: newFavorites }, () => {
+        currentFavorites = newFavorites;
+        hideEditForm();
+        filterFavorites(searchInput.value);
+        showNotification('Changes saved successfully!');
+      });
+    };
+
+    // Функция для отмены редактирования
+    const handleCancel = () => {
+      hideEditForm();
+    };
+
+    // Добавляем обработчики для кнопок
+    saveButton.addEventListener('click', handleSave);
+    cancelButton.addEventListener('click', handleCancel);
 
     // Добавляем обработчик для кнопки генерации названия
     generateTitleButton.addEventListener('click', async () => {
       generateTitleButton.classList.add('loading');
       generateTitleButton.innerHTML = '⌛';
       try {
-        // Загружаем содержимое чата
         const chatData = await loadChatContent(favorite.timestamp);
-        
-        // Формируем текст для генерации названия
         const chatText = chatData.map(message => {
           const role = message.type === 'question' ? 'User' : 'Assistant';
           return `${role}: ${message.content}`;
@@ -3467,10 +3502,7 @@ document.addEventListener('DOMContentLoaded', () => {
       generateTagsButton.classList.add('loading');
       generateTagsButton.innerHTML = '⌛';
       try {
-        // Загружаем содержимое чата
         const chatData = await loadChatContent(favorite.timestamp);
-        
-        // Формируем текст для генерации тегов
         const chatText = chatData.map(message => {
           const role = message.type === 'question' ? 'User' : 'Assistant';
           return `${role}: ${message.content}`;
@@ -3495,10 +3527,7 @@ document.addEventListener('DOMContentLoaded', () => {
       generateDescButton.classList.add('loading');
       generateDescButton.innerHTML = '⌛';
       try {
-        // Загружаем содержимое чата
         const chatData = await loadChatContent(favorite.timestamp);
-        
-        // Формируем текст для генерации summary
         const chatText = chatData.map(message => {
           const role = message.type === 'question' ? 'User' : 'Assistant';
           return `${role}: ${message.content}`;
@@ -3507,8 +3536,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const summary = await generateSummary(chatText);
         if (summary) {
           descriptionInput.value = summary;
-          
-          // Копируем summary в буфер обмена
           await navigator.clipboard.writeText(summary);
           showNotification('Summary generated and copied to clipboard!');
         }
@@ -3518,81 +3545,6 @@ document.addEventListener('DOMContentLoaded', () => {
       } finally {
         generateDescButton.classList.remove('loading');
         generateDescButton.innerHTML = '📝';
-      }
-    });
-
-    // Функция сохранения
-    function handleSave() {
-      console.log('Save button clicked');
-      
-      if (!titleInput || !tagsInput || !descriptionInput) {
-        console.error('Form inputs not found');
-        return;
-      }
-
-      const newTitle = titleInput.value.trim();
-      const newTags = tagsInput.value.trim();
-      const newDescription = descriptionInput.value.trim();
-      
-      console.log('Saving with values:', {
-        title: newTitle,
-        tags: newTags,
-        description: newDescription,
-        timestamp: favorite.timestamp
-      });
-
-      // Преобразуем теги в массив
-      const tags = newTags
-        .split(/\s+/)
-        .filter(tag => tag.length > 0)
-        .map(tag => tag.toLowerCase());
-      
-      // Создаем новый массив избранного
-      const newFavorites = currentFavorites.map(f => {
-        if (f.timestamp === favorite.timestamp) {
-          return {
-            ...f,
-            title: newTitle,
-            description: newDescription,
-            tags: tags
-          };
-        }
-        return f;
-      });
-      
-      console.log('Saving new favorites:', newFavorites);
-      
-      // Сохраняем изменения
-      chrome.storage.sync.set({ favorites: newFavorites }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error saving changes:', chrome.runtime.lastError);
-          alert('Произошла ошибка при сохранении изменений.');
-          return;
-        }
-        
-        console.log('Changes saved successfully');
-        currentFavorites = newFavorites;
-        hideEditForm();
-        filterFavorites(searchInput.value);
-      });
-    }
-
-    // Функция отмены
-    function handleCancel() {
-      console.log('Cancel button clicked');
-      hideEditForm();
-    }
-
-    // Добавляем обработчики событий
-    saveButton.addEventListener('click', handleSave);
-    cancelButton.addEventListener('click', handleCancel);
-
-    // Добавляем обработчик клавиш
-    form.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.ctrlKey) {
-        handleSave();
-      } else if (e.key === 'Escape') {
-        handleCancel();
       }
     });
 
@@ -3908,7 +3860,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Обработчик для кнопки Edit
       editBtn.addEventListener('click', () => {
-        startEdit(favorite);
+        console.log('Edit button clicked for favorite:', favorite);
+        showEditForm(chatElement, favorite);
       });
 
       // Обработчик для кнопки Delete
@@ -4103,6 +4056,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         model: importData.settings.model || DEFAULT_SETTINGS.model,
         summaryPrompt: importData.settings.summaryPrompt || DEFAULT_SETTINGS.summaryPrompt,
+        titlePrompt: importData.settings.titlePrompt || DEFAULT_SETTINGS.titlePrompt,
         tagsPrompt: importData.settings.tagsPrompt || DEFAULT_SETTINGS.tagsPrompt
       } : DEFAULT_SETTINGS;
       
@@ -5202,13 +5156,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Обновляем обработчики для кнопок генерации
-  function setGenerateButtonLoading(button, isLoading) {
-    button.disabled = isLoading;
-    button.classList.toggle('loading', isLoading);
-    button.textContent = isLoading ? '⌛' : '📝';
-  }
-
+ 
   // Обновляем обработчики для drag and drop
   function setElementDragging(element, isDragging) {
     element.classList.toggle('dragging', isDragging);
@@ -5228,25 +5176,6 @@ document.addEventListener('DOMContentLoaded', () => {
       form.classList.remove('slide-out');
     }, 300);
   }
-
-  // Для кнопок генерации заголовка и описания
-  generateTitleButton.addEventListener('click', async () => {
-    setGenerateButtonLoading(generateTitleButton, true);
-    try {
-      // ... код генерации ...
-    } finally {
-      setGenerateButtonLoading(generateTitleButton, false);
-    }
-  });
-
-  generateDescButton.addEventListener('click', async () => {
-    setGenerateButtonLoading(generateDescButton, true);
-    try {
-      // ... код генерации ...
-    } finally {
-      setGenerateButtonLoading(generateDescButton, false);
-    }
-  });
 
   // Для drag and drop
   function handleDragStart(e) {
@@ -5378,4 +5307,22 @@ document.addEventListener('DOMContentLoaded', () => {
       throw new Error(`Failed to generate title: ${error.message}`);
     }
   }
+
+  // Функция для загрузки избранного
+  function loadFavorites() {
+    chrome.storage.sync.get(['favorites'], (result) => {
+      console.log('Loaded favorites:', result.favorites);
+      currentFavorites = result.favorites || [];
+      renderFavorites(currentFavorites);
+    });
+  }
+
+  // Загружаем избранное при загрузке страницы
+  loadFavorites();
+
+  // Загружаем промпты при загрузке страницы
+  loadPrompts();
+
+  // Загружаем настройки
+  loadSettings();
 }); 
